@@ -3,6 +3,11 @@ window.Campanha = window.Campanha || {};
 (function (C) {
   const $ = (id) => C.utils.$(id);
   const { esc, hojeISO, formatarData, formatarCpf, isAdmin, preencherSelect } = C.utils;
+  const ESTADOS = [
+    '', 'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
+    'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
+    'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
+  ];
 
   function opcoesMaterial() {
     return (C.state.cache.materiais || []).map((m) => ({
@@ -99,6 +104,98 @@ window.Campanha = window.Campanha || {};
     return e.usuario_id ? [String(e.usuario_id)] : [];
   }
 
+  function colaboradorPorId(id) {
+    return (C.state.cache.colaboradores || []).find((c) => c.id === id) || {};
+  }
+
+  function dadosEndereco(fonte) {
+    return {
+      endereco: fonte?.endereco || '',
+      numero: fonte?.numero || '',
+      complemento: fonte?.complemento || '',
+      bairro: fonte?.bairro || '',
+      cidade: fonte?.cidade || '',
+      estado: fonte?.estado || ''
+    };
+  }
+
+  function textoEndereco(fonte) {
+    const d = dadosEndereco(fonte);
+    const rua = [d.endereco, d.numero, d.complemento].filter(Boolean).join(', ');
+    const local = [d.bairro, [d.cidade, d.estado].filter(Boolean).join('/')].filter(Boolean).join(' · ');
+    return [rua, local].filter(Boolean).join(' — ');
+  }
+
+  function urlMaps(fonte) {
+    const d = dadosEndereco(fonte);
+    const partes = [d.endereco, d.numero, d.complemento, d.bairro, d.cidade, d.estado, 'Brasil'].filter(Boolean);
+    if (!d.endereco && !d.cidade && !d.bairro) return '';
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(partes.join(', '))}`;
+  }
+
+  function botaoMaps(e, compacto) {
+    const url = urlMaps(e);
+    if (!url) return '';
+    const cls = compacto
+      ? 'rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-800'
+      : 'min-h-[44px] flex-1 rounded-xl bg-sky-50 text-sm font-bold text-sky-800';
+    return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="${cls} inline-flex items-center justify-center">Maps</a>`;
+  }
+
+  function montarEstadosEntrega() {
+    const sel = $('ent-estado');
+    if (!sel) return;
+    const atual = sel.value;
+    sel.innerHTML = ESTADOS.map((uf) =>
+      `<option value="${esc(uf)}">${uf ? uf : 'UF'}</option>`
+    ).join('');
+    if (atual) sel.value = atual;
+    C.chosen.atualizar(sel);
+  }
+
+  function limparEnderecoNovo() {
+    if ($('ent-endereco')) $('ent-endereco').value = '';
+    if ($('ent-numero')) $('ent-numero').value = '';
+    if ($('ent-complemento')) $('ent-complemento').value = '';
+    if ($('ent-bairro')) $('ent-bairro').value = '';
+    if ($('ent-cidade')) $('ent-cidade').value = '';
+    C.utils.definirSelect($('ent-estado'), '');
+  }
+
+  function preencherEnderecoNovo(fonte) {
+    const d = dadosEndereco(fonte);
+    if ($('ent-endereco')) $('ent-endereco').value = d.endereco;
+    if ($('ent-numero')) $('ent-numero').value = d.numero;
+    if ($('ent-complemento')) $('ent-complemento').value = d.complemento;
+    if ($('ent-bairro')) $('ent-bairro').value = d.bairro;
+    if ($('ent-cidade')) $('ent-cidade').value = d.cidade;
+    C.utils.definirSelect($('ent-estado'), d.estado);
+  }
+
+  function atualizarPreviewEndereco() {
+    const preview = $('ent-end-preview');
+    if (!preview) return;
+    const col = colaboradorPorId($('ent-colaborador')?.value);
+    const texto = textoEndereco(col);
+    preview.textContent = texto || ($('ent-colaborador')?.value
+      ? 'Este colaborador não tem endereço cadastrado.'
+      : 'Selecione o colaborador para ver o endereço.');
+  }
+
+  function aplicarModoEndereco() {
+    const novo = Boolean($('ent-local-novo')?.checked);
+    const box = $('ent-end-novo');
+    if (box) box.classList.toggle('hidden', !novo);
+    if (novo) C.chosen.atualizar($('ent-estado'));
+    atualizarPreviewEndereco();
+  }
+
+  function definirModoEndereco(usaColaborador) {
+    if ($('ent-local-colab')) $('ent-local-colab').checked = Boolean(usaColaborador);
+    if ($('ent-local-novo')) $('ent-local-novo').checked = !usaColaborador;
+    aplicarModoEndereco();
+  }
+
   function botoesEditar(e, compacto) {
     if (!podeEditar(e)) return '';
     const cls = compacto
@@ -120,9 +217,9 @@ window.Campanha = window.Campanha || {};
       ? `<button type="button" data-del="entregas" data-id="${esc(e.id)}" class="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700">Excluir</button>`
       : `<button type="button" data-del="entregas" data-id="${esc(e.id)}" class="mt-3 min-h-[44px] w-full rounded-xl bg-red-50 text-sm font-bold text-red-700">Excluir</button>`;
     if (compacto) {
-      return `<div class="flex flex-wrap justify-end gap-2">${botoesEditar(e, true)}${botoesVisualizar(e, true)}${del}</div>`;
+      return `<div class="flex flex-wrap justify-end gap-2">${botoesEditar(e, true)}${botoesVisualizar(e, true)}${botaoMaps(e, true)}${del}</div>`;
     }
-    return `${(podeEditar(e) || statusEntrega(e) === 'entregue') ? `<div class="mt-3 flex gap-2">${botoesEditar(e, false)}${botoesVisualizar(e, false)}</div>` : ''}${del}`;
+    return `${(podeEditar(e) || statusEntrega(e) === 'entregue' || urlMaps(e)) ? `<div class="mt-3 flex gap-2">${botoesEditar(e, false)}${botoesVisualizar(e, false)}${botaoMaps(e, false)}</div>` : ''}${del}`;
   }
 
   function linhaDado(rotulo, valor) {
@@ -136,9 +233,10 @@ window.Campanha = window.Campanha || {};
 
   function htmlVisualizacao(e) {
     const itens = itensDaEntrega(e);
-    const col = (C.state.cache.colaboradores || []).find((c) => c.id === e.colaborador_id) || {};
-    const endereco = [col.endereco, col.numero, col.complemento].filter(Boolean).join(', ');
-    const local = [col.bairro || e.colaborador_bairro, [col.cidade || e.colaborador_cidade, col.estado].filter(Boolean).join('/')].filter(Boolean).join(' · ');
+    const col = colaboradorPorId(e.colaborador_id);
+    const maps = urlMaps(e);
+    const localEntrega = textoEndereco(e) || 'Não informado';
+    const origem = e.usa_endereco_colaborador === false ? 'Endereço cadastrado para esta entrega' : 'Endereço do colaborador';
     const listaItens = itens.length
       ? `<ul class="space-y-2">${itens.map((i) => `
           <li class="flex items-start justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2">
@@ -154,8 +252,8 @@ window.Campanha = window.Campanha || {};
       ${linhaDado('Data', formatarData(e.data_entrega))}
       ${linhaDado('Colaborador', esc(e.colaborador_nome || col.nome || '—'))}
       ${col.cpf ? linhaDado('CPF', esc(formatarCpf(col.cpf))) : ''}
-      ${linhaDado('Endereço', esc(endereco || 'Não informado'))}
-      ${linhaDado('Bairro / Cidade', esc(local || '—'))}
+      ${linhaDado(origem, esc(localEntrega))}
+      ${maps ? `<a href="${esc(maps)}" target="_blank" rel="noopener noreferrer" class="mb-3 inline-flex min-h-[44px] items-center rounded-xl bg-sky-50 px-4 text-sm font-bold text-sky-800">Abrir no Maps</a>` : ''}
       ${linhaDado('Quem recebeu', esc(e.quem_recebeu || '—'))}
       ${linhaDado('Entregue por', esc(nomesEntregadores(e)))}
       <p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Materiais</p>
@@ -214,6 +312,10 @@ window.Campanha = window.Campanha || {};
     if ($('ent-data')) $('ent-data').value = hojeISO();
     if ($('ent-salvar')) $('ent-salvar').textContent = 'Registrar entrega';
     resetarItens();
+    montarEstadosEntrega();
+    limparEnderecoNovo();
+    definirModoEndereco(true);
+    atualizarPreviewEndereco();
     if ($('ent-form-titulo')) $('ent-form-titulo').textContent = 'Nova entrega';
   }
 
@@ -268,6 +370,7 @@ window.Campanha = window.Campanha || {};
       <div class="${compacto ? 'flex flex-wrap justify-end gap-2' : 'mt-3 flex gap-2'}">
         ${botoesEditar(e, compacto)}
         ${botoesVisualizar(e, compacto)}
+        ${botaoMaps(e, compacto)}
         ${confirmar}
         ${status !== 'entregue' ? `<button type="button" data-ent-acao="reagendado" data-id="${esc(e.id)}" class="${cls} bg-violet-50 text-violet-800">Reagendar</button>` : ''}
       </div>
@@ -305,7 +408,10 @@ window.Campanha = window.Campanha || {};
           e.quem_recebeu,
           nomesEntregadores(e),
           resumoMateriais(itens),
-          C.utils.rotuloStatus(statusEntrega(e))
+          C.utils.rotuloStatus(statusEntrega(e)),
+          e.endereco,
+          e.bairro,
+          e.cidade
         );
       });
     }
@@ -352,7 +458,7 @@ window.Campanha = window.Campanha || {};
           </ul>
           <div class="mt-3 grid grid-cols-1 gap-1 text-sm text-slate-600">
             <p>Entregue por: <strong class="text-slate-800">${esc(nomesEntregadores(e))}</strong></p>
-            <p>${formatarData(e.data_entrega)}${e.colaborador_bairro ? ` · ${esc(e.colaborador_bairro)}` : ''}${e.colaborador_cidade ? `/${esc(e.colaborador_cidade)}` : ''}</p>
+            <p>${formatarData(e.data_entrega)}${e.bairro || e.colaborador_bairro ? ` · ${esc(e.bairro || e.colaborador_bairro)}` : ''}${e.cidade || e.colaborador_cidade ? `/${esc(e.cidade || e.colaborador_cidade)}` : ''}</p>
           </div>
           ${e.pode_status && isAdmin() ? `<div class="mt-3">${controleStatus(e)}</div>` : ''}
           ${isAdmin() ? botoesAdmin(e, false) : botoesOperacao(e, false)}
@@ -402,6 +508,51 @@ window.Campanha = window.Campanha || {};
                 <input type="hidden" id="ent-id" />
                 <label class="mb-1 block text-sm font-semibold" for="ent-colaborador">Colaborador</label>
                 <select id="ent-colaborador" class="field mb-3" required></select>
+
+                <p class="mb-1 text-sm font-semibold">Local da entrega</p>
+                <div class="mb-3 grid gap-2">
+                  <label class="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+                    <input type="radio" name="ent-local" id="ent-local-colab" value="colab" class="mt-1" checked />
+                    <span>
+                      <strong class="block text-sm text-slate-800">Usar endereço do colaborador</strong>
+                      <span id="ent-end-preview" class="mt-0.5 block text-xs text-slate-500">Selecione o colaborador para ver o endereço.</span>
+                    </span>
+                  </label>
+                  <label class="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+                    <input type="radio" name="ent-local" id="ent-local-novo" value="novo" class="mt-1" />
+                    <span>
+                      <strong class="block text-sm text-slate-800">Cadastrar novo endereço</strong>
+                      <span class="mt-0.5 block text-xs text-slate-500">Informe o local específico desta entrega.</span>
+                    </span>
+                  </label>
+                </div>
+
+                <div id="ent-end-novo" class="mb-3 hidden rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <label class="mb-1 block text-sm font-semibold" for="ent-endereco">Endereço</label>
+                  <input id="ent-endereco" class="field mb-3" placeholder="Rua, avenida..." />
+                  <div class="mb-3 grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="mb-1 block text-sm font-semibold" for="ent-numero">Número</label>
+                      <input id="ent-numero" class="field" />
+                    </div>
+                    <div>
+                      <label class="mb-1 block text-sm font-semibold" for="ent-complemento">Complemento</label>
+                      <input id="ent-complemento" class="field" />
+                    </div>
+                  </div>
+                  <label class="mb-1 block text-sm font-semibold" for="ent-bairro">Bairro</label>
+                  <input id="ent-bairro" class="field mb-3" />
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="mb-1 block text-sm font-semibold" for="ent-cidade">Cidade</label>
+                      <input id="ent-cidade" class="field" />
+                    </div>
+                    <div>
+                      <label class="mb-1 block text-sm font-semibold" for="ent-estado">Estado</label>
+                      <select id="ent-estado" class="field"></select>
+                    </div>
+                  </div>
+                </div>
 
                 <div class="ent-admin-only">
                   <label class="mb-1 block text-sm font-semibold" for="ent-entregadores">Quem entregou</label>
@@ -478,6 +629,11 @@ window.Campanha = window.Campanha || {};
 
       $('ent-add-item').addEventListener('click', () => adicionarLinha());
 
+      $('ent-colaborador').addEventListener('change', atualizarPreviewEndereco);
+      $('ent-local-colab').addEventListener('change', aplicarModoEndereco);
+      $('ent-local-novo').addEventListener('change', aplicarModoEndereco);
+      montarEstadosEntrega();
+
       $('ent-itens').addEventListener('click', (ev) => {
         const btn = ev.target.closest('.ent-remover-item');
         if (!btn) return;
@@ -508,6 +664,19 @@ window.Campanha = window.Campanha || {};
           C.ui.toast('Inclua ao menos um material com quantidade.', 'erro');
           return;
         }
+        const usaColab = Boolean($('ent-local-colab')?.checked);
+        const enderecoNovo = {
+          endereco: $('ent-endereco')?.value.trim() || '',
+          numero: $('ent-numero')?.value.trim() || '',
+          complemento: $('ent-complemento')?.value.trim() || '',
+          bairro: $('ent-bairro')?.value.trim() || '',
+          cidade: $('ent-cidade')?.value.trim() || '',
+          estado: $('ent-estado')?.value || ''
+        };
+        if (!usaColab && !enderecoNovo.endereco && !enderecoNovo.cidade) {
+          C.ui.toast('Informe o endereço da entrega.', 'erro');
+          return;
+        }
         try {
           C.ui.loading(true);
           const id = $('ent-id').value || null;
@@ -518,7 +687,14 @@ window.Campanha = window.Campanha || {};
             p_data_entrega: data,
             p_entregadores: entregadores,
             p_itens: itens,
-            p_status: isAdmin() ? ($('ent-status').value || 'novo') : 'novo'
+            p_status: isAdmin() ? ($('ent-status').value || 'novo') : 'novo',
+            p_usa_endereco_colaborador: usaColab,
+            p_endereco: usaColab ? null : enderecoNovo.endereco,
+            p_numero: usaColab ? null : enderecoNovo.numero,
+            p_complemento: usaColab ? null : enderecoNovo.complemento,
+            p_bairro: usaColab ? null : enderecoNovo.bairro,
+            p_cidade: usaColab ? null : enderecoNovo.cidade,
+            p_estado: usaColab ? null : enderecoNovo.estado
           });
           C.ui.fecharModal('modal-entrega');
           C.ui.toast(id ? 'Entrega atualizada.' : 'Entrega registrada.');
@@ -650,6 +826,15 @@ window.Campanha = window.Campanha || {};
         $('ent-status').value = status;
       }
       resetarItens(itensDaEntrega(e));
+      montarEstadosEntrega();
+      if (e.usa_endereco_colaborador === false) {
+        preencherEnderecoNovo(e);
+        definirModoEndereco(false);
+      } else {
+        limparEnderecoNovo();
+        definirModoEndereco(true);
+      }
+      atualizarPreviewEndereco();
       $('ent-salvar').textContent = 'Salvar';
       $('ent-form-titulo').textContent = 'Editar entrega';
       C.ui.abrirModal('modal-entrega');

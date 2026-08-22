@@ -1,9 +1,10 @@
 {
   "name": "campanha",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "scripts": {
     "start": "node frontend/server.js",
+    "hostinger": "node scripts/prepare-hostinger.js",
     "version:patch": "node scripts/bump-version.js patch",
     "version:minor": "node scripts/bump-version.js minor",
     "version:major": "node scripts/bump-version.js major"

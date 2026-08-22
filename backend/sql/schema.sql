@@ -109,8 +109,23 @@ CREATE TABLE IF NOT EXISTS public.entregas (
   data_entrega    date NOT NULL DEFAULT CURRENT_DATE,
   status          public.status_entrega NOT NULL DEFAULT 'novo',
   usuario_id      uuid NOT NULL REFERENCES public.usuarios(id) ON DELETE RESTRICT,
+  usa_endereco_colaborador boolean NOT NULL DEFAULT true,
+  endereco        text,
+  numero          text,
+  complemento     text,
+  bairro          text,
+  cidade          text,
+  estado          text,
   created_at      timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS usa_endereco_colaborador boolean NOT NULL DEFAULT true;
+ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS endereco text;
+ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS numero text;
+ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS complemento text;
+ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS bairro text;
+ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS cidade text;
+ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS estado text;
 
 CREATE TABLE IF NOT EXISTS public.entrega_itens (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -820,8 +835,19 @@ BEGIN
         e.id,
         e.colaborador_id,
         c.nome AS colaborador_nome,
+        c.endereco AS colaborador_endereco,
+        c.numero AS colaborador_numero,
+        c.complemento AS colaborador_complemento,
         c.bairro AS colaborador_bairro,
         c.cidade AS colaborador_cidade,
+        c.estado AS colaborador_estado,
+        COALESCE(e.usa_endereco_colaborador, true) AS usa_endereco_colaborador,
+        COALESCE(e.endereco, c.endereco) AS endereco,
+        COALESCE(e.numero, c.numero) AS numero,
+        COALESCE(e.complemento, c.complemento) AS complemento,
+        COALESCE(e.bairro, c.bairro) AS bairro,
+        COALESCE(e.cidade, c.cidade) AS cidade,
+        COALESCE(e.estado, c.estado) AS estado,
         e.quem_recebeu,
         e.status::text AS status,
         COALESCE((
@@ -897,6 +923,8 @@ DROP FUNCTION IF EXISTS public.salvar_entrega(text, uuid, text, uuid, integer, d
 DROP FUNCTION IF EXISTS public.salvar_entrega(text, uuid, text, date, uuid[], json);
 DROP FUNCTION IF EXISTS public.salvar_entrega(text, uuid, text, date, uuid[], json, text);
 
+DROP FUNCTION IF EXISTS public.salvar_entrega(text, uuid, text, date, uuid[], json, text, uuid);
+
 CREATE OR REPLACE FUNCTION public.salvar_entrega(
   p_token           text,
   p_colaborador_id  uuid,
@@ -905,7 +933,14 @@ CREATE OR REPLACE FUNCTION public.salvar_entrega(
   p_entregadores    uuid[],
   p_itens           json,
   p_status          text DEFAULT 'novo',
-  p_id              uuid DEFAULT NULL
+  p_id              uuid DEFAULT NULL,
+  p_usa_endereco_colaborador boolean DEFAULT true,
+  p_endereco        text DEFAULT NULL,
+  p_numero          text DEFAULT NULL,
+  p_complemento     text DEFAULT NULL,
+  p_bairro          text DEFAULT NULL,
+  p_cidade          text DEFAULT NULL,
+  p_estado          text DEFAULT NULL
 )
 RETURNS json
 LANGUAGE plpgsql
@@ -920,6 +955,14 @@ DECLARE
   v_atual    public.entregas;
   v_admin    boolean;
   v_pode     boolean;
+  v_usa_colab boolean;
+  v_end      text;
+  v_num      text;
+  v_comp     text;
+  v_bairro   text;
+  v_cidade   text;
+  v_uf       text;
+  v_col      public.colaboradores;
 BEGIN
   v_user := public._exige_login(p_token);
   v_admin := (v_user.tipo::text = 'admin');
@@ -952,6 +995,30 @@ BEGIN
 
   IF NOT EXISTS (SELECT 1 FROM public.colaboradores WHERE id = p_colaborador_id) THEN
     RAISE EXCEPTION 'Colaborador não encontrado.';
+  END IF;
+
+  SELECT * INTO v_col FROM public.colaboradores WHERE id = p_colaborador_id;
+  v_usa_colab := COALESCE(p_usa_endereco_colaborador, true);
+  IF v_usa_colab THEN
+    v_end    := v_col.endereco;
+    v_num    := v_col.numero;
+    v_comp   := v_col.complemento;
+    v_bairro := v_col.bairro;
+    v_cidade := v_col.cidade;
+    v_uf     := v_col.estado;
+  ELSE
+    v_end    := nullif(trim(COALESCE(p_endereco, '')), '');
+    v_num    := nullif(trim(COALESCE(p_numero, '')), '');
+    v_comp   := nullif(trim(COALESCE(p_complemento, '')), '');
+    v_bairro := nullif(trim(COALESCE(p_bairro, '')), '');
+    v_cidade := nullif(trim(COALESCE(p_cidade, '')), '');
+    v_uf     := CASE
+      WHEN p_estado IS NULL OR trim(p_estado) = '' THEN NULL
+      ELSE upper(trim(p_estado))
+    END;
+    IF v_end IS NULL AND v_cidade IS NULL THEN
+      RAISE EXCEPTION 'Informe o endereço da entrega.';
+    END IF;
   END IF;
 
   SELECT ARRAY(
@@ -990,7 +1057,14 @@ BEGIN
       colaborador_id = p_colaborador_id,
       quem_recebeu = NULLIF(trim(COALESCE(p_quem_recebeu, '')), ''),
       data_entrega = COALESCE(p_data_entrega, v_atual.data_entrega),
-      status = v_status
+      status = v_status,
+      usa_endereco_colaborador = v_usa_colab,
+      endereco = v_end,
+      numero = v_num,
+      complemento = v_comp,
+      bairro = v_bairro,
+      cidade = v_cidade,
+      estado = v_uf
     WHERE id = p_id
     RETURNING id INTO v_id;
 
@@ -998,13 +1072,15 @@ BEGIN
     DELETE FROM public.entrega_entregadores WHERE entrega_id = v_id;
   ELSE
     INSERT INTO public.entregas (
-      colaborador_id, quem_recebeu, data_entrega, status, usuario_id
+      colaborador_id, quem_recebeu, data_entrega, status, usuario_id,
+      usa_endereco_colaborador, endereco, numero, complemento, bairro, cidade, estado
     ) VALUES (
       p_colaborador_id,
       NULLIF(trim(COALESCE(p_quem_recebeu, '')), ''),
       COALESCE(p_data_entrega, CURRENT_DATE),
       v_status,
-      v_user.id
+      v_user.id,
+      v_usa_colab, v_end, v_num, v_comp, v_bairro, v_cidade, v_uf
     )
     RETURNING id INTO v_id;
   END IF;
@@ -1241,7 +1317,7 @@ GRANT EXECUTE ON FUNCTION public.listar_materiais(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.salvar_material(text, uuid, text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.excluir_material(text, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_entregas(text, integer) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.salvar_entrega(text, uuid, text, date, uuid[], json, text, uuid) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.salvar_entrega(text, uuid, text, date, uuid[], json, text, uuid, boolean, text, text, text, text, text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.excluir_entrega(text, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.atualizar_status_entrega(text, uuid, text, date) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.relatorio_entregas(text, uuid, text, date, date, text) TO anon, authenticated;
