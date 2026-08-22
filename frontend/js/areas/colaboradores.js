@@ -2,15 +2,13 @@ window.Campanha = window.Campanha || {};
 
 (function (C) {
   const $ = (id) => C.utils.$(id);
-  const { esc, formatarData, formatarMoeda, formatarCpf, cpfValido, soDigitos, rotuloBanco, matchFiltro } = C.utils;
-  const ESTADOS = [
-    '', 'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
-    'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
-    'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
-  ];
+  const { esc, formatarData, formatarMoeda, formatarCpf, cpfValido, soDigitos, rotuloBanco, matchFiltro, hojeISO } = C.utils;
 
   let folha = false;
   let filtro = '';
+  let pagamentoColab = null;
+  let comprovanteAtual = '';
+  let ocrTexto = '';
 
   function setFolha(on) {
     folha = Boolean(on);
@@ -38,15 +36,8 @@ window.Campanha = window.Campanha || {};
     $('col-id').value = '';
     $('col-form-titulo').textContent = 'Novo colaborador';
     setFolha(false);
-    C.chosen.atualizar($('col-estado'));
+    C.localidades.aplicarPadrao($('col-estado'), $('col-cidade'));
     C.chosen.atualizar($('col-banco'));
-  }
-
-  function montarEstados() {
-    $('col-estado').innerHTML = ESTADOS.map((uf) =>
-      `<option value="${esc(uf)}">${uf ? uf : 'UF'}</option>`
-    ).join('');
-    C.chosen.atualizar($('col-estado'));
   }
 
   function montarBancos() {
@@ -78,6 +69,26 @@ window.Campanha = window.Campanha || {};
     ));
   }
 
+  function botoesColaborador(c, compacto) {
+    const pagar = c.folha
+      ? (compacto
+        ? `<button type="button" data-col-acao="pagar" data-id="${esc(c.id)}" class="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800">Pagamento</button>`
+        : `<button type="button" data-col-acao="pagar" data-id="${esc(c.id)}" class="min-h-[44px] flex-1 rounded-xl bg-emerald-50 text-sm font-bold text-emerald-800">Pagamento</button>`)
+      : '';
+    if (compacto) {
+      return `<div class="flex flex-wrap justify-end gap-2">${pagar}${C.ui.botoesLinha(c.id, 'colaboradores')}</div>`;
+    }
+    return `
+      <div class="mt-3 flex gap-2">
+        ${pagar}
+        <button type="button" data-edit="colaboradores" data-id="${esc(c.id)}"
+          class="min-h-[44px] flex-1 rounded-xl bg-brand-50 text-sm font-bold text-brand-800">Editar</button>
+        <button type="button" data-del="colaboradores" data-id="${esc(c.id)}"
+          class="min-h-[44px] flex-1 rounded-xl bg-red-50 text-sm font-bold text-red-700">Excluir</button>
+      </div>
+    `;
+  }
+
   function render() {
     const box = $('lista-colaboradores');
     const itens = listaFiltrada();
@@ -104,9 +115,10 @@ window.Campanha = window.Campanha || {};
               ${c.folha && c.banco ? `<span class="rounded-full bg-slate-100 px-3 py-1 text-slate-600">${esc(rotuloBanco(c.banco))}</span>` : ''}
               ${c.folha && c.agencia ? `<span class="rounded-full bg-slate-100 px-3 py-1 text-slate-600">Ag. ${esc(c.agencia)}</span>` : ''}
               ${c.folha && c.conta ? `<span class="rounded-full bg-slate-100 px-3 py-1 text-slate-600">Cc. ${esc(c.conta)}</span>` : ''}
+              ${c.folha && c.ultimo_pagamento ? `<span class="rounded-full bg-slate-100 px-3 py-1 text-slate-600">Último pgto ${formatarData(c.ultimo_pagamento)}</span>` : ''}
               ${c.data_inicio ? `<span class="rounded-full bg-slate-100 px-3 py-1 text-slate-600">Desde ${formatarData(c.data_inicio)}</span>` : ''}
             </div>
-            ${C.ui.botoesCard(c.id, 'colaboradores')}
+            ${botoesColaborador(c, false)}
           </article>
         `;
       }).join(''),
@@ -124,11 +136,120 @@ window.Campanha = window.Campanha || {};
             <td>${c.folha ? esc(formatarMoeda(c.valor_mensal)) : 'Não'}</td>
             <td>${esc(banco)}</td>
             <td>${c.data_inicio ? formatarData(c.data_inicio) : '—'}</td>
-            <td>${C.ui.botoesLinha(c.id, 'colaboradores')}</td>
+            <td>${botoesColaborador(c, true)}</td>
           </tr>
         `;
       })
     });
+  }
+
+  function setOcrStatus(texto) {
+    const el = $('pag-ocr-status');
+    if (!el) return;
+    el.classList.toggle('hidden', !texto);
+    el.textContent = texto || '';
+  }
+
+  function mostrarPreview(dataUrl) {
+    comprovanteAtual = dataUrl || '';
+    const wrap = $('pag-preview-wrap');
+    const img = $('pag-preview');
+    if (!wrap || !img) return;
+    wrap.classList.toggle('hidden', !dataUrl);
+    img.src = dataUrl || '';
+  }
+
+  function resetPagamentoForm() {
+    comprovanteAtual = '';
+    ocrTexto = '';
+    if ($('pag-foto')) $('pag-foto').value = '';
+    if ($('pag-arquivo')) $('pag-arquivo').value = '';
+    mostrarPreview('');
+    setOcrStatus('');
+    if ($('pag-data')) $('pag-data').value = hojeISO();
+    if ($('pag-valor') && pagamentoColab) {
+      $('pag-valor').value = pagamentoColab.valor_mensal ?? '';
+    }
+  }
+
+  function renderHistorico(lista) {
+    const box = $('pag-historico');
+    if (!box) return;
+    if (!lista?.length) {
+      box.innerHTML = '<p class="text-sm text-slate-500">Nenhum pagamento registrado.</p>';
+      return;
+    }
+    box.innerHTML = `<ul class="space-y-2">${lista.map((p) => `
+      <li class="flex items-center justify-between gap-2 rounded-2xl bg-slate-50 px-3 py-2">
+        <span>
+          <strong class="block text-sm text-slate-800">${esc(formatarMoeda(p.valor))}</strong>
+          <span class="text-xs text-slate-500">${formatarData(p.data_pagamento)} · ${esc(p.usuario_nome || '')}</span>
+        </span>
+        <span class="flex shrink-0 gap-2">
+          <button type="button" data-pag-ver="${esc(p.id)}" class="rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-800">Ver</button>
+          <button type="button" data-pag-del="${esc(p.id)}" class="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700">Excluir</button>
+        </span>
+      </li>
+    `).join('')}</ul>`;
+  }
+
+  async function carregarHistorico() {
+    if (!pagamentoColab) return;
+    const lista = await C.api.rpc('listar_pagamentos_folha', { p_colaborador_id: pagamentoColab.id });
+    renderHistorico(lista || []);
+  }
+
+  async function abrirPagamento(id) {
+    const c = (C.state.cache.colaboradores || []).find((x) => x.id === id);
+    if (!c || !c.folha) {
+      C.ui.toast('Pagamento só está disponível para quem está na folha.', 'erro');
+      return;
+    }
+    pagamentoColab = c;
+    $('pag-colaborador-id').value = c.id;
+    $('pag-form-titulo').textContent = 'Pagamento da folha';
+    $('pag-resumo').textContent = `${c.nome} · ${formatarMoeda(c.valor_mensal)}${c.ultimo_pagamento ? ` · último em ${formatarData(c.ultimo_pagamento)}` : ''}`;
+    resetPagamentoForm();
+    C.ui.abrirModal('modal-pagamento');
+    try {
+      C.ui.loading(true);
+      await carregarHistorico();
+    } catch (err) {
+      C.ui.toast(C.utils.msgErro(err), 'erro');
+    } finally {
+      C.ui.loading(false);
+    }
+  }
+
+  async function processarComprovante(file) {
+    if (!file || !file.type.startsWith('image/')) {
+      C.ui.toast('Selecione uma foto do comprovante.', 'erro');
+      return;
+    }
+    setOcrStatus('Lendo comprovante…');
+    try {
+      const lido = await C.ocr.lerComprovante(file, (p) => {
+        setOcrStatus(`Lendo comprovante… ${Math.round((p || 0) * 100)}%`);
+      });
+      mostrarPreview(lido.dataUrl);
+      ocrTexto = lido.texto || '';
+      if ($('pag-foto')) $('pag-foto').value = '';
+      if ($('pag-arquivo')) $('pag-arquivo').value = '';
+      if (lido.data) $('pag-data').value = lido.data;
+      if (lido.valor != null) $('pag-valor').value = Number(lido.valor).toFixed(2);
+      if (lido.erro) {
+        setOcrStatus('Foto anexada. Preencha data e valor se não tiverem sido lidos.');
+        return;
+      }
+      if (lido.data || lido.valor != null) {
+        setOcrStatus('Data e valor lidos do comprovante. Confira antes de salvar.');
+      } else {
+        setOcrStatus('Não deu para ler data/valor. Preencha manualmente.');
+      }
+    } catch (err) {
+      setOcrStatus('');
+      C.ui.toast(C.utils.msgErro(err), 'erro');
+    }
   }
 
   C.areas.colaboradores = {
@@ -177,13 +298,13 @@ window.Campanha = window.Campanha || {};
                 <input id="col-bairro" class="field mb-3" />
 
                 <div class="mb-3 grid grid-cols-3 gap-3">
-                  <div class="col-span-2">
-                    <label class="mb-1 block text-sm font-semibold" for="col-cidade">Cidade</label>
-                    <input id="col-cidade" class="field" />
-                  </div>
                   <div>
                     <label class="mb-1 block text-sm font-semibold" for="col-estado">Estado</label>
-                    <select id="col-estado" class="field"></select>
+                    <select id="col-estado" class="field" data-placeholder="Selecione o estado"></select>
+                  </div>
+                  <div class="col-span-2">
+                    <label class="mb-1 block text-sm font-semibold" for="col-cidade">Cidade</label>
+                    <select id="col-cidade" class="field" data-placeholder="Selecione a cidade"></select>
                   </div>
                 </div>
 
@@ -228,12 +349,62 @@ window.Campanha = window.Campanha || {};
               </form>
             `
           })}
+          ${C.ui.modalCadastro({
+            id: 'modal-pagamento',
+            tituloId: 'pag-form-titulo',
+            largo: true,
+            formHtml: `
+              <form id="form-pagamento">
+                <input type="hidden" id="pag-colaborador-id" />
+                <p id="pag-resumo" class="mb-3 text-sm text-slate-600"></p>
+
+                <p class="mb-2 text-sm font-extrabold text-slate-800">Comprovante</p>
+                <div class="mb-3 grid grid-cols-2 gap-2">
+                  <button type="button" id="pag-camera" class="min-h-[52px] rounded-2xl bg-brand-800 text-sm font-bold text-white">
+                    Tirar foto
+                  </button>
+                  <button type="button" id="pag-galeria" class="min-h-[52px] rounded-2xl bg-slate-100 text-sm font-bold text-slate-700">
+                    Galeria
+                  </button>
+                </div>
+                <input id="pag-foto" type="file" accept="image/*" capture="environment" class="sr-only" tabindex="-1" />
+                <input id="pag-arquivo" type="file" accept="image/*" class="sr-only" tabindex="-1" />
+                <p id="pag-ocr-status" class="mb-2 hidden text-xs font-semibold text-brand-800"></p>
+                <div id="pag-preview-wrap" class="mb-3 hidden overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                  <img id="pag-preview" alt="Comprovante" class="max-h-56 w-full object-contain" />
+                </div>
+
+                <label class="mb-1 block text-sm font-semibold" for="pag-data">Data do comprovante</label>
+                <input id="pag-data" type="date" class="field mb-3" required />
+
+                <label class="mb-1 block text-sm font-semibold" for="pag-valor">Valor (R$)</label>
+                <input id="pag-valor" type="number" min="0" step="0.01" inputmode="decimal" class="field mb-4" required />
+
+                <div class="flex gap-2">
+                  <button type="submit" id="pag-salvar" class="btn-primary flex-1">Registrar pagamento</button>
+                  <button type="button" id="btn-cancelar-pagamento" class="min-h-[52px] flex-1 rounded-2xl bg-slate-100 font-bold text-slate-600">Fechar</button>
+                </div>
+              </form>
+              <div class="mt-5 border-t border-slate-100 pt-4">
+                <p class="mb-2 text-sm font-extrabold text-slate-800">Pagamentos anteriores</p>
+                <div id="pag-historico"></div>
+              </div>
+            `
+          })}
+          ${C.ui.modalCadastro({
+            id: 'modal-ver-comprovante',
+            tituloId: 'pag-ver-titulo',
+            formHtml: `
+              <img id="pag-ver-img" alt="Comprovante" class="mb-4 max-h-[70vh] w-full rounded-2xl object-contain bg-slate-50" />
+              <button type="button" id="btn-fechar-comprovante" class="btn-primary w-full">Fechar</button>
+            `
+          })}
         </div>
       `;
     },
 
     bind() {
-      montarEstados();
+      C.localidades.aplicarPadrao($('col-estado'), $('col-cidade'));
       montarBancos();
       setFolha(false);
       $('btn-novo-colaborador').addEventListener('click', () => {
@@ -249,6 +420,9 @@ window.Campanha = window.Campanha || {};
       });
       $('modal-colaborador').addEventListener('cadastro:fechar', resetForm);
       $('col-folha').addEventListener('click', () => setFolha(!folha));
+      $('col-estado').addEventListener('change', () => {
+        C.localidades.preencherCidades($('col-cidade'), $('col-estado').value);
+      });
       $('btn-cancelar-colaborador').addEventListener('click', () => C.ui.fecharModal('modal-colaborador'));
       $('form-colaborador').addEventListener('submit', async (ev) => {
         ev.preventDefault();
@@ -283,7 +457,7 @@ window.Campanha = window.Campanha || {};
             p_numero: $('col-numero').value,
             p_complemento: $('col-complemento').value,
             p_bairro: $('col-bairro').value,
-            p_cidade: $('col-cidade').value,
+            p_cidade: $('col-cidade').value || null,
             p_estado: $('col-estado').value || null,
             p_folha: folha,
             p_valor_mensal: folha ? Number($('col-valor').value) : null,
@@ -301,15 +475,116 @@ window.Campanha = window.Campanha || {};
           C.ui.loading(false);
         }
       });
+
+      $('pag-camera').addEventListener('click', () => $('pag-foto').click());
+      $('pag-galeria').addEventListener('click', () => $('pag-arquivo').click());
+      $('pag-foto').addEventListener('change', (ev) => {
+        const file = ev.target.files?.[0];
+        if (file) processarComprovante(file);
+      });
+      $('pag-arquivo').addEventListener('change', (ev) => {
+        const file = ev.target.files?.[0];
+        if (file) processarComprovante(file);
+      });
+      $('btn-cancelar-pagamento').addEventListener('click', () => C.ui.fecharModal('modal-pagamento'));
+      $('btn-fechar-comprovante').addEventListener('click', () => C.ui.fecharModal('modal-ver-comprovante'));
+      $('modal-pagamento').addEventListener('cadastro:fechar', () => {
+        pagamentoColab = null;
+        resetPagamentoForm();
+      });
+
+      $('lista-colaboradores').addEventListener('click', (ev) => {
+        const btn = ev.target.closest('[data-col-acao]');
+        if (!btn) return;
+        if (btn.dataset.colAcao === 'pagar') abrirPagamento(btn.dataset.id);
+      });
+
+      $('form-pagamento').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const colaboradorId = $('pag-colaborador-id').value;
+        const data = $('pag-data').value;
+        const valor = Number($('pag-valor').value);
+        if (!colaboradorId || !data) {
+          C.ui.toast('Informe a data do pagamento.', 'erro');
+          return;
+        }
+        if (!Number.isFinite(valor) || valor < 0) {
+          C.ui.toast('Informe o valor do pagamento.', 'erro');
+          return;
+        }
+        if (!comprovanteAtual) {
+          C.ui.toast('Anexe a foto do comprovante.', 'erro');
+          return;
+        }
+        try {
+          C.ui.loading(true);
+          await C.api.rpc('salvar_pagamento_folha', {
+            p_colaborador_id: colaboradorId,
+            p_data_pagamento: data,
+            p_valor: valor,
+            p_comprovante: comprovanteAtual,
+            p_ocr_texto: ocrTexto || null
+          });
+          C.ui.toast('Pagamento registrado.');
+          resetPagamentoForm();
+          await carregarHistorico();
+          await C.areas.colaboradores.carregar();
+          const atual = (C.state.cache.colaboradores || []).find((x) => x.id === colaboradorId);
+          if (atual) {
+            pagamentoColab = atual;
+            $('pag-resumo').textContent = `${atual.nome} · ${formatarMoeda(atual.valor_mensal)}${atual.ultimo_pagamento ? ` · último em ${formatarData(atual.ultimo_pagamento)}` : ''}`;
+            $('pag-valor').value = atual.valor_mensal ?? '';
+          }
+        } catch (err) {
+          C.ui.toast(C.utils.msgErro(err), 'erro');
+        } finally {
+          C.ui.loading(false);
+        }
+      });
+
+      $('pag-historico').addEventListener('click', async (ev) => {
+        const ver = ev.target.closest('[data-pag-ver]');
+        const del = ev.target.closest('[data-pag-del]');
+        if (ver) {
+          try {
+            C.ui.loading(true);
+            const pag = await C.api.rpc('obter_pagamento_folha', { p_id: ver.dataset.pagVer });
+            $('pag-ver-titulo').textContent = `Comprovante · ${formatarData(pag.data_pagamento)}`;
+            $('pag-ver-img').src = pag.comprovante || '';
+            C.ui.abrirModal('modal-ver-comprovante');
+          } catch (err) {
+            C.ui.toast(C.utils.msgErro(err), 'erro');
+          } finally {
+            C.ui.loading(false);
+          }
+          return;
+        }
+        if (del) {
+          const ok = await C.ui.confirmar('Excluir este pagamento?');
+          if (!ok) return;
+          try {
+            C.ui.loading(true);
+            await C.api.rpc('excluir_pagamento_folha', { p_id: del.dataset.pagDel });
+            C.ui.toast('Pagamento excluído.');
+            await carregarHistorico();
+            await C.areas.colaboradores.carregar();
+          } catch (err) {
+            C.ui.toast(C.utils.msgErro(err), 'erro');
+          } finally {
+            C.ui.loading(false);
+          }
+        }
+      });
     },
 
     async carregar() {
       const lista = await C.api.rpc('listar_colaboradores');
       C.state.cache.colaboradores = lista || [];
+      await C.localidades.aplicarPadrao($('col-estado'), $('col-cidade'));
       render();
     },
 
-    editar(id) {
+    async editar(id) {
       const c = C.state.cache.colaboradores.find((x) => x.id === id);
       if (!c) return;
       $('col-id').value = c.id;
@@ -319,8 +594,8 @@ window.Campanha = window.Campanha || {};
       $('col-numero').value = c.numero || '';
       $('col-complemento').value = c.complemento || '';
       $('col-bairro').value = c.bairro || '';
-      $('col-cidade').value = c.cidade || '';
-      C.utils.definirSelect($('col-estado'), c.estado || '');
+      await C.localidades.preencherEstados($('col-estado'), c.estado || '');
+      await C.localidades.preencherCidades($('col-cidade'), c.estado || '', c.cidade || '');
       $('col-inicio').value = c.data_inicio || '';
       setFolha(Boolean(c.folha));
       $('col-valor').value = c.valor_mensal ?? '';

@@ -1,7 +1,7 @@
 window.Campanha = window.Campanha || {};
 
 Campanha.VERSION = {
-  number: '1.0.1',
+  number: '1.0.2',
   released: '2026-08-22'
 };
 

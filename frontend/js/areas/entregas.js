@@ -3,11 +3,6 @@ window.Campanha = window.Campanha || {};
 (function (C) {
   const $ = (id) => C.utils.$(id);
   const { esc, hojeISO, formatarData, formatarCpf, isAdmin, preencherSelect } = C.utils;
-  const ESTADOS = [
-    '', 'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
-    'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
-    'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
-  ];
 
   function opcoesMaterial() {
     return (C.state.cache.materiais || []).map((m) => ({
@@ -142,15 +137,10 @@ window.Campanha = window.Campanha || {};
     return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="${cls} inline-flex items-center justify-center">Maps</a>`;
   }
 
-  function montarEstadosEntrega() {
+  function montarEstadosEntrega(selecionado) {
     const sel = $('ent-estado');
-    if (!sel) return;
-    const atual = sel.value;
-    sel.innerHTML = ESTADOS.map((uf) =>
-      `<option value="${esc(uf)}">${uf ? uf : 'UF'}</option>`
-    ).join('');
-    if (atual) sel.value = atual;
-    C.chosen.atualizar(sel);
+    if (!sel) return Promise.resolve();
+    return C.localidades.preencherEstados(sel, selecionado);
   }
 
   function limparEnderecoNovo() {
@@ -158,18 +148,17 @@ window.Campanha = window.Campanha || {};
     if ($('ent-numero')) $('ent-numero').value = '';
     if ($('ent-complemento')) $('ent-complemento').value = '';
     if ($('ent-bairro')) $('ent-bairro').value = '';
-    if ($('ent-cidade')) $('ent-cidade').value = '';
-    C.utils.definirSelect($('ent-estado'), '');
+    C.localidades.aplicarPadrao($('ent-estado'), $('ent-cidade'));
   }
 
-  function preencherEnderecoNovo(fonte) {
+  async function preencherEnderecoNovo(fonte) {
     const d = dadosEndereco(fonte);
     if ($('ent-endereco')) $('ent-endereco').value = d.endereco;
     if ($('ent-numero')) $('ent-numero').value = d.numero;
     if ($('ent-complemento')) $('ent-complemento').value = d.complemento;
     if ($('ent-bairro')) $('ent-bairro').value = d.bairro;
-    if ($('ent-cidade')) $('ent-cidade').value = d.cidade;
-    C.utils.definirSelect($('ent-estado'), d.estado);
+    await C.localidades.preencherEstados($('ent-estado'), d.estado);
+    await C.localidades.preencherCidades($('ent-cidade'), d.estado, d.cidade);
   }
 
   function atualizarPreviewEndereco() {
@@ -186,7 +175,10 @@ window.Campanha = window.Campanha || {};
     const novo = Boolean($('ent-local-novo')?.checked);
     const box = $('ent-end-novo');
     if (box) box.classList.toggle('hidden', !novo);
-    if (novo) C.chosen.atualizar($('ent-estado'));
+    if (novo) {
+      C.chosen.atualizar($('ent-estado'));
+      C.chosen.atualizar($('ent-cidade'));
+    }
     atualizarPreviewEndereco();
   }
 
@@ -312,7 +304,6 @@ window.Campanha = window.Campanha || {};
     if ($('ent-data')) $('ent-data').value = hojeISO();
     if ($('ent-salvar')) $('ent-salvar').textContent = 'Registrar entrega';
     resetarItens();
-    montarEstadosEntrega();
     limparEnderecoNovo();
     definirModoEndereco(true);
     atualizarPreviewEndereco();
@@ -542,14 +533,14 @@ window.Campanha = window.Campanha || {};
                   </div>
                   <label class="mb-1 block text-sm font-semibold" for="ent-bairro">Bairro</label>
                   <input id="ent-bairro" class="field mb-3" />
-                  <div class="grid grid-cols-2 gap-2">
-                    <div>
-                      <label class="mb-1 block text-sm font-semibold" for="ent-cidade">Cidade</label>
-                      <input id="ent-cidade" class="field" />
-                    </div>
+                  <div class="grid grid-cols-3 gap-2">
                     <div>
                       <label class="mb-1 block text-sm font-semibold" for="ent-estado">Estado</label>
-                      <select id="ent-estado" class="field"></select>
+                      <select id="ent-estado" class="field" data-placeholder="UF"></select>
+                    </div>
+                    <div class="col-span-2">
+                      <label class="mb-1 block text-sm font-semibold" for="ent-cidade">Cidade</label>
+                      <select id="ent-cidade" class="field" data-placeholder="Selecione a cidade"></select>
                     </div>
                   </div>
                 </div>
@@ -632,6 +623,9 @@ window.Campanha = window.Campanha || {};
       $('ent-colaborador').addEventListener('change', atualizarPreviewEndereco);
       $('ent-local-colab').addEventListener('change', aplicarModoEndereco);
       $('ent-local-novo').addEventListener('change', aplicarModoEndereco);
+      $('ent-estado').addEventListener('change', () => {
+        C.localidades.preencherCidades($('ent-cidade'), $('ent-estado').value);
+      });
       montarEstadosEntrega();
 
       $('ent-itens').addEventListener('click', (ev) => {
@@ -801,7 +795,7 @@ window.Campanha = window.Campanha || {};
       pintarChips();
     },
 
-    editar(id) {
+    async editar(id) {
       const e = (C.state.cache.entregas || []).find((x) => x.id === id);
       if (!e) return;
       if (!podeEditar(e)) {
@@ -826,11 +820,11 @@ window.Campanha = window.Campanha || {};
         $('ent-status').value = status;
       }
       resetarItens(itensDaEntrega(e));
-      montarEstadosEntrega();
       if (e.usa_endereco_colaborador === false) {
-        preencherEnderecoNovo(e);
+        await preencherEnderecoNovo(e);
         definirModoEndereco(false);
       } else {
+        await montarEstadosEntrega();
         limparEnderecoNovo();
         definirModoEndereco(true);
       }

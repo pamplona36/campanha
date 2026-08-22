@@ -1,8 +1,8 @@
 -- =============================================================================
 -- CAMPANHA — Controle de Entrega de Materiais
 -- Cole este script no SQL Editor do Supabase e clique em RUN (uma única vez).
--- Banco já existente: rode os patches em backend/sql/ (itens, recebeu, status)
--- conforme a necessidade.
+-- Banco já existente: rode os patches em backend/sql/ conforme a necessidade.
+-- UF/cidades (IBGE): backend/sql/patch-localidades.sql
 -- =============================================================================
 -- Login inicial após executar:
 --   usuário: admin
@@ -90,6 +90,40 @@ CREATE UNIQUE INDEX IF NOT EXISTS colaboradores_cpf_uidx
   ON public.colaboradores (cpf)
   WHERE cpf IS NOT NULL;
 
+CREATE TABLE IF NOT EXISTS public.estados (
+  uf    text PRIMARY KEY,
+  nome  text NOT NULL,
+  CONSTRAINT estados_uf_chk CHECK (char_length(uf) = 2)
+);
+
+CREATE TABLE IF NOT EXISTS public.cidades (
+  id       serial PRIMARY KEY,
+  uf       text NOT NULL REFERENCES public.estados(uf) ON UPDATE CASCADE ON DELETE RESTRICT,
+  nome     text NOT NULL,
+  ibge_id  integer
+);
+
+ALTER TABLE public.cidades ADD COLUMN IF NOT EXISTS ibge_id integer;
+CREATE UNIQUE INDEX IF NOT EXISTS cidades_uf_nome_uidx ON public.cidades (uf, nome);
+CREATE UNIQUE INDEX IF NOT EXISTS cidades_ibge_uidx ON public.cidades (ibge_id) WHERE ibge_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_cidades_uf ON public.cidades (uf);
+
+CREATE TABLE IF NOT EXISTS public.pagamentos_folha (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  colaborador_id  uuid NOT NULL REFERENCES public.colaboradores(id) ON DELETE RESTRICT,
+  usuario_id      uuid NOT NULL REFERENCES public.usuarios(id) ON DELETE RESTRICT,
+  data_pagamento  date NOT NULL DEFAULT CURRENT_DATE,
+  valor           numeric(12,2) NOT NULL,
+  comprovante     text NOT NULL,
+  ocr_texto       text,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT pagamentos_folha_valor_chk CHECK (valor >= 0),
+  CONSTRAINT pagamentos_folha_comp_chk CHECK (length(comprovante) BETWEEN 32 AND 1500000)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pagamentos_folha_colaborador
+  ON public.pagamentos_folha (colaborador_id, data_pagamento DESC);
+
 CREATE TABLE IF NOT EXISTS public.materiais (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   nome        text NOT NULL,
@@ -172,9 +206,15 @@ ALTER TABLE public.entrega_itens   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.entrega_entregadores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tipos_material  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sessoes         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pagamentos_folha ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.estados ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cidades ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON TABLE public.usuarios        FROM anon, authenticated;
 REVOKE ALL ON TABLE public.colaboradores   FROM anon, authenticated;
+REVOKE ALL ON TABLE public.pagamentos_folha FROM anon, authenticated;
+REVOKE ALL ON TABLE public.estados FROM anon, authenticated;
+REVOKE ALL ON TABLE public.cidades FROM anon, authenticated;
 REVOKE ALL ON TABLE public.materiais       FROM anon, authenticated;
 REVOKE ALL ON TABLE public.entregas        FROM anon, authenticated;
 REVOKE ALL ON TABLE public.entrega_itens   FROM anon, authenticated;
@@ -484,23 +524,69 @@ BEGIN
     SELECT json_agg(row_to_json(t) ORDER BY t.nome)
     FROM (
       SELECT
-        id,
-        nome,
-        CASE WHEN v_user.tipo = 'admin' THEN cpf ELSE NULL END AS cpf,
-        endereco,
-        numero,
-        complemento,
-        bairro,
-        cidade,
-        estado,
-        data_inicio,
-        CASE WHEN v_user.tipo = 'admin' THEN folha ELSE NULL END AS folha,
-        CASE WHEN v_user.tipo = 'admin' THEN valor_mensal ELSE NULL END AS valor_mensal,
-        CASE WHEN v_user.tipo = 'admin' THEN banco ELSE NULL END AS banco,
-        CASE WHEN v_user.tipo = 'admin' THEN agencia ELSE NULL END AS agencia,
-        CASE WHEN v_user.tipo = 'admin' THEN conta ELSE NULL END AS conta
-      FROM public.colaboradores
+        c.id,
+        c.nome,
+        CASE WHEN v_user.tipo = 'admin' THEN to_jsonb(c)->>'cpf' ELSE NULL END AS cpf,
+        c.endereco,
+        c.numero,
+        c.complemento,
+        c.bairro,
+        c.cidade,
+        c.estado,
+        c.data_inicio,
+        CASE WHEN v_user.tipo = 'admin' THEN c.folha ELSE NULL END AS folha,
+        CASE WHEN v_user.tipo = 'admin' THEN c.valor_mensal ELSE NULL END AS valor_mensal,
+        CASE WHEN v_user.tipo = 'admin' THEN to_jsonb(c)->>'banco' ELSE NULL END AS banco,
+        CASE WHEN v_user.tipo = 'admin' THEN to_jsonb(c)->>'agencia' ELSE NULL END AS agencia,
+        CASE WHEN v_user.tipo = 'admin' THEN to_jsonb(c)->>'conta' ELSE NULL END AS conta,
+        CASE WHEN v_user.tipo = 'admin' THEN (
+          SELECT MAX(p.data_pagamento)
+          FROM public.pagamentos_folha p
+          WHERE p.colaborador_id = c.id
+        ) ELSE NULL END AS ultimo_pagamento
+      FROM public.colaboradores c
     ) t
+  ), '[]'::json);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.listar_estados(p_token text)
+RETURNS json
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+BEGIN
+  PERFORM public._exige_login(p_token);
+
+  RETURN COALESCE((
+    SELECT json_agg(json_build_object('uf', e.uf, 'nome', e.nome) ORDER BY e.nome)
+    FROM public.estados e
+  ), '[]'::json);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.listar_cidades(p_token text, p_estado text)
+RETURNS json
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  v_uf text;
+BEGIN
+  PERFORM public._exige_login(p_token);
+  v_uf := upper(trim(COALESCE(p_estado, '')));
+  IF v_uf = '' THEN
+    RETURN '[]'::json;
+  END IF;
+
+  RETURN COALESCE((
+    SELECT json_agg(json_build_object('nome', c.nome) ORDER BY c.nome)
+    FROM public.cidades c
+    WHERE c.uf = v_uf
   ), '[]'::json);
 END;
 $$;
@@ -637,12 +723,298 @@ BEGIN
     RAISE EXCEPTION 'Este colaborador possui entregas e não pode ser excluído.';
   END IF;
 
+  IF EXISTS (SELECT 1 FROM public.pagamentos_folha WHERE colaborador_id = p_id) THEN
+    RAISE EXCEPTION 'Este colaborador possui pagamentos da folha e não pode ser excluído.';
+  END IF;
+
   DELETE FROM public.colaboradores WHERE id = p_id;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Colaborador não encontrado.';
   END IF;
 
   RETURN json_build_object('ok', true);
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Pagamentos da folha
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.listar_pagamentos_folha(p_token text, p_colaborador_id uuid)
+RETURNS json
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+BEGIN
+  PERFORM public._exige_admin(p_token);
+
+  IF NOT EXISTS (SELECT 1 FROM public.colaboradores WHERE id = p_colaborador_id) THEN
+    RAISE EXCEPTION 'Colaborador não encontrado.';
+  END IF;
+
+  RETURN COALESCE((
+    SELECT json_agg(row_to_json(t) ORDER BY t.data_pagamento DESC, t.created_at DESC)
+    FROM (
+      SELECT
+        p.id,
+        p.colaborador_id,
+        p.data_pagamento,
+        p.valor,
+        p.usuario_id,
+        u.nome AS usuario_nome,
+        p.created_at
+      FROM public.pagamentos_folha p
+      JOIN public.usuarios u ON u.id = p.usuario_id
+      WHERE p.colaborador_id = p_colaborador_id
+    ) t
+  ), '[]'::json);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.obter_pagamento_folha(p_token text, p_id uuid)
+RETURNS json
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  v_row json;
+BEGIN
+  PERFORM public._exige_admin(p_token);
+
+  SELECT row_to_json(t) INTO v_row
+  FROM (
+    SELECT
+      p.id,
+      p.colaborador_id,
+      p.data_pagamento,
+      p.valor,
+      p.comprovante,
+      p.usuario_id,
+      u.nome AS usuario_nome,
+      p.created_at
+    FROM public.pagamentos_folha p
+    JOIN public.usuarios u ON u.id = p.usuario_id
+    WHERE p.id = p_id
+  ) t;
+
+  IF v_row IS NULL THEN
+    RAISE EXCEPTION 'Pagamento não encontrado.';
+  END IF;
+
+  RETURN v_row;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.salvar_pagamento_folha(
+  p_token           text,
+  p_colaborador_id  uuid,
+  p_data_pagamento  date,
+  p_valor           numeric,
+  p_comprovante     text,
+  p_ocr_texto       text DEFAULT NULL
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  v_user public.usuarios;
+  v_id   uuid;
+  v_comp text;
+BEGIN
+  v_user := public._exige_admin(p_token);
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.colaboradores c
+    WHERE c.id = p_colaborador_id AND c.folha = true
+  ) THEN
+    RAISE EXCEPTION 'Colaborador não está na folha.';
+  END IF;
+
+  IF p_data_pagamento IS NULL THEN
+    RAISE EXCEPTION 'Informe a data do pagamento.';
+  END IF;
+
+  IF p_valor IS NULL OR p_valor < 0 THEN
+    RAISE EXCEPTION 'Informe o valor do pagamento.';
+  END IF;
+
+  v_comp := trim(COALESCE(p_comprovante, ''));
+  IF v_comp !~ '^data:image/(jpeg|jpg|png|webp);base64,' THEN
+    RAISE EXCEPTION 'Anexe a foto do comprovante.';
+  END IF;
+  IF length(v_comp) < 32 OR length(v_comp) > 1500000 THEN
+    RAISE EXCEPTION 'A foto do comprovante é inválida ou grande demais.';
+  END IF;
+
+  INSERT INTO public.pagamentos_folha (
+    colaborador_id, usuario_id, data_pagamento, valor, comprovante, ocr_texto
+  ) VALUES (
+    p_colaborador_id,
+    v_user.id,
+    p_data_pagamento,
+    round(p_valor, 2),
+    v_comp,
+    NULLIF(trim(COALESCE(p_ocr_texto, '')), '')
+  )
+  RETURNING id INTO v_id;
+
+  RETURN json_build_object('ok', true, 'id', v_id);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.excluir_pagamento_folha(p_token text, p_id uuid)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  v_id uuid;
+BEGIN
+  PERFORM public._exige_admin(p_token);
+
+  DELETE FROM public.pagamentos_folha
+  WHERE id = p_id
+  RETURNING id INTO v_id;
+
+  IF v_id IS NULL THEN
+    RAISE EXCEPTION 'Pagamento não encontrado.';
+  END IF;
+
+  RETURN json_build_object('ok', true);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.relatorio_folha_pagamento(
+  p_token     text,
+  p_data_ini  date DEFAULT NULL,
+  p_data_fim  date DEFAULT NULL,
+  p_situacao  text DEFAULT NULL
+)
+RETURNS json
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  v_ini    date;
+  v_fim    date;
+  v_sit    text;
+  v_itens  json;
+  v_totais json;
+BEGIN
+  PERFORM public._exige_admin(p_token);
+
+  v_ini := COALESCE(p_data_ini, date_trunc('month', CURRENT_DATE)::date);
+  v_fim := COALESCE(
+    p_data_fim,
+    (date_trunc('month', CURRENT_DATE) + interval '1 month' - interval '1 day')::date
+  );
+  IF v_ini > v_fim THEN
+    RAISE EXCEPTION 'A data inicial não pode ser maior que a data final.';
+  END IF;
+
+  v_sit := lower(nullif(trim(COALESCE(p_situacao, '')), ''));
+  IF v_sit = 'todos' THEN
+    v_sit := NULL;
+  END IF;
+  IF v_sit IS NOT NULL AND v_sit NOT IN ('pago', 'aberto') THEN
+    RAISE EXCEPTION 'Situação inválida.';
+  END IF;
+
+  WITH base AS (
+    SELECT
+      c.id AS colaborador_id,
+      c.nome AS colaborador_nome,
+      to_jsonb(c)->>'cpf' AS cpf,
+      to_jsonb(c)->>'banco' AS banco,
+      to_jsonb(c)->>'agencia' AS agencia,
+      to_jsonb(c)->>'conta' AS conta,
+      c.valor_mensal AS valor_mensal,
+      c.data_inicio AS data_inicio,
+      COALESCE((
+        SELECT json_agg(json_build_object(
+          'id', p.id,
+          'data_pagamento', p.data_pagamento,
+          'valor', p.valor,
+          'usuario_nome', u.nome
+        ) ORDER BY p.data_pagamento DESC, p.created_at DESC)
+        FROM public.pagamentos_folha p
+        JOIN public.usuarios u ON u.id = p.usuario_id
+        WHERE p.colaborador_id = c.id
+          AND p.data_pagamento BETWEEN v_ini AND v_fim
+      ), '[]'::json) AS pagamentos,
+      COALESCE((
+        SELECT SUM(p.valor)
+        FROM public.pagamentos_folha p
+        WHERE p.colaborador_id = c.id
+          AND p.data_pagamento BETWEEN v_ini AND v_fim
+      ), 0) AS valor_pago,
+      COALESCE((
+        SELECT COUNT(*)::integer
+        FROM public.pagamentos_folha p
+        WHERE p.colaborador_id = c.id
+          AND p.data_pagamento BETWEEN v_ini AND v_fim
+      ), 0) AS qtd_pagamentos,
+      (
+        SELECT MAX(p.data_pagamento)
+        FROM public.pagamentos_folha p
+        WHERE p.colaborador_id = c.id
+          AND p.data_pagamento BETWEEN v_ini AND v_fim
+      ) AS ultima_data
+    FROM public.colaboradores c
+    WHERE c.folha = true
+      AND (c.data_inicio IS NULL OR c.data_inicio <= v_fim)
+  ),
+  marcado AS (
+    SELECT
+      *,
+      CASE WHEN qtd_pagamentos > 0 THEN 'pago' ELSE 'aberto' END AS situacao,
+      CASE WHEN qtd_pagamentos > 0 THEN 0 ELSE COALESCE(valor_mensal, 0) END AS valor_aberto
+    FROM base
+  )
+  SELECT
+    COALESCE((
+      SELECT json_agg(row_to_json(t) ORDER BY
+        CASE t.situacao WHEN 'aberto' THEN 0 ELSE 1 END,
+        t.colaborador_nome
+      )
+      FROM marcado t
+      WHERE v_sit IS NULL OR t.situacao = v_sit
+    ), '[]'::json),
+    json_build_object(
+      'periodo_ini', v_ini,
+      'periodo_fim', v_fim,
+      'colaboradores', COUNT(*)::integer,
+      'pagos', COUNT(*) FILTER (WHERE situacao = 'pago')::integer,
+      'abertos', COUNT(*) FILTER (WHERE situacao = 'aberto')::integer,
+      'valor_folha', COALESCE(SUM(valor_mensal), 0),
+      'valor_pago', COALESCE(SUM(valor_pago), 0),
+      'valor_aberto', COALESCE(SUM(valor_aberto), 0)
+    )
+  INTO v_itens, v_totais
+  FROM marcado;
+
+  RETURN json_build_object(
+    'ok', true,
+    'itens', COALESCE(v_itens, '[]'::json),
+    'totais', COALESCE(v_totais, json_build_object(
+      'periodo_ini', v_ini,
+      'periodo_fim', v_fim,
+      'colaboradores', 0,
+      'pagos', 0,
+      'abertos', 0,
+      'valor_folha', 0,
+      'valor_pago', 0,
+      'valor_aberto', 0
+    ))
+  );
 END;
 $$;
 
@@ -1308,8 +1680,15 @@ GRANT EXECUTE ON FUNCTION public.listar_equipe(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.salvar_usuario(text, uuid, text, text, text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.excluir_usuario(text, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_colaboradores(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.listar_estados(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.listar_cidades(text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.salvar_colaborador(text, uuid, text, text, text, text, text, text, text, boolean, numeric, date, text, text, text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.excluir_colaborador(text, uuid) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.listar_pagamentos_folha(text, uuid) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.obter_pagamento_folha(text, uuid) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.salvar_pagamento_folha(text, uuid, date, numeric, text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.excluir_pagamento_folha(text, uuid) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.relatorio_folha_pagamento(text, date, date, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_tipos(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.salvar_tipo(text, uuid, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.excluir_tipo(text, uuid) TO anon, authenticated;

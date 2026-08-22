@@ -25,13 +25,19 @@ window.Campanha = window.Campanha || {};
     return `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M3 11l8.5-8.5a2 2 0 012.8 0L21 9.2a2 2 0 010 2.8L12.2 21a2 2 0 01-2.8 0L3 14.6V11z"/></svg>`;
   }
 
+  function iconMoney() {
+    return `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`;
+  }
+
   const CADASTROS = ['usuarios', 'colaboradores', 'materiais', 'tipos'];
-  const ORDEM = ['entregas', 'relatorios', 'usuarios', 'colaboradores', 'materiais', 'tipos'];
+  const ORDEM = ['entregas', 'relatorios', 'folha', 'usuarios', 'colaboradores', 'materiais', 'tipos'];
 
   function menu() {
     const admin = C.utils.isAdmin();
     const operacao = [{ id: 'entregas', label: 'Entregas', svg: iconBox() }];
-    if (admin) operacao.push({ id: 'relatorios', label: 'Relatórios', svg: iconChart() });
+    if (admin) {
+      operacao.push({ id: 'relatorios', label: 'Relatórios', svg: iconChart() });
+    }
     const cadastros = admin
       ? [
           { id: 'usuarios', label: 'Usuários', svg: iconUsers() },

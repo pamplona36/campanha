@@ -8,13 +8,13 @@ A tela de upload da Hostinger exige um projeto Node.js reconhecido. O pacote é 
 npm run hostinger
 ```
 
-Arquivo para enviar: `dist/campanha-hostinger.zip`
+Arquivo para enviar: `dist/campanha-hostinger-X.Y.Z.zip` (a versão sai do arquivo `VERSION`).
 
 Na raiz do ZIP existem `package.json` e `server.js` (obrigatório para a Hostinger aceitar).
 
 ## 2. Upload
 
-1. Arraste `dist/campanha-hostinger.zip` em **Faça upload dos arquivos do seu app**.
+1. Arraste `dist/campanha-hostinger-X.Y.Z.zip` em **Faça upload dos arquivos do seu app**.
 2. Se pedir framework: **Express** (ou **Other**).
 3. Node.js: **20**.
 4. Comando de start: `npm start` (ou `node server.js`).

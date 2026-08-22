@@ -67,8 +67,11 @@ function escreverEnvJs() {
   return url.includes('supabase.co') && !url.includes('SEU-PROJETO') && key.length > 20;
 }
 
-function escreverAppNode() {
-  const versao = fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim() || '1.0.0';
+function lerVersao() {
+  return fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim() || '1.0.0';
+}
+
+function escreverAppNode(versao) {
   const pkg = {
     name: 'campanha',
     version: versao,
@@ -86,11 +89,17 @@ function escreverAppNode() {
   fs.copyFileSync(path.join(ROOT, 'scripts', 'hostinger-server.js'), path.join(OUT, 'server.js'));
 }
 
-function compactar() {
+function compactar(versao) {
   const dist = path.join(ROOT, 'dist');
-  const zip = path.join(dist, 'campanha-hostinger.zip');
-  const tgz = path.join(dist, 'campanha-hostinger.tar.gz');
-  for (const arquivo of [zip, tgz]) {
+  fs.mkdirSync(dist, { recursive: true });
+  const zip = path.join(dist, `campanha-hostinger-${versao}.zip`);
+  const tgz = path.join(dist, `campanha-hostinger-${versao}.tar.gz`);
+  for (const arquivo of [
+    zip,
+    tgz,
+    path.join(dist, 'campanha-hostinger.zip'),
+    path.join(dist, 'campanha-hostinger.tar.gz')
+  ]) {
     if (fs.existsSync(arquivo)) fs.unlinkSync(arquivo);
   }
 
@@ -107,16 +116,17 @@ function compactar() {
   return { zip, tgz };
 }
 
+const versao = lerVersao();
 limparPasta(OUT);
 copiar(FRONT, OUT);
 const envOk = escreverEnvJs();
-escreverAppNode();
+escreverAppNode(versao);
 fs.copyFileSync(path.join(ROOT, 'VERSION'), path.join(OUT, 'VERSION'));
 
-const pacote = compactar();
+const pacote = compactar(versao);
 console.log(`Pasta: ${OUT}`);
 console.log(`ZIP:   ${pacote.zip}`);
 if (pacote.tgz) console.log(`TGZ:   ${pacote.tgz}`);
 if (envOk) console.log('env.js gerado a partir do arquivo .env local.');
 else console.log('Aviso: preencha as variáveis SUPABASE_URL e SUPABASE_ANON_KEY no hPanel.');
-console.log('Na Hostinger: envie campanha-hostinger.zip (framework Express / Node 20).');
+console.log(`Na Hostinger: envie campanha-hostinger-${versao}.zip (framework Express / Node 20).`);
