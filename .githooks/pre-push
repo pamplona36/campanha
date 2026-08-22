@@ -1,0 +1,10 @@
+#!/bin/sh
+# Garante que a versão atual vai no push e cria a tag vX.Y.Z se ainda não existir.
+VERSION=$(tr -d '[:space:]' < VERSION)
+if [ -z "$VERSION" ]; then
+  echo "VERSION vazia." >&2
+  exit 1
+fi
+if ! git rev-parse "v$VERSION" >/dev/null 2>&1; then
+  git tag -a "v$VERSION" -m "Versão $VERSION"
+fi

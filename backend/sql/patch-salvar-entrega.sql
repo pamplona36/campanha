@@ -1,0 +1,1 @@
+QstatusEntrega is not defined

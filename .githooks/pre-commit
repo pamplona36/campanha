@@ -1,0 +1,4 @@
+#!/bin/sh
+# Sobe a versão em todo commit (1.0.0 -> 1.0.1).
+node scripts/bump-version.js patch
+git add VERSION frontend/js/version.js package.json
