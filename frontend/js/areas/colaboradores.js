@@ -2,7 +2,7 @@ window.Campanha = window.Campanha || {};
 
 (function (C) {
   const $ = (id) => C.utils.$(id);
-  const { esc, formatarData, formatarMoeda, formatarCpf, cpfValido, soDigitos, rotuloBanco, matchFiltro, hojeISO } = C.utils;
+  const { esc, formatarData, formatarMoeda, formatarCpf, formatarTelefone, cpfValido, telefoneValido, soDigitos, rotuloBanco, matchFiltro, hojeISO } = C.utils;
 
   let folha = false;
   let filtro = '';
@@ -58,6 +58,8 @@ window.Campanha = window.Campanha || {};
       c.nome,
       formatarCpf(c.cpf),
       c.cpf,
+      formatarTelefone(c.telefone),
+      c.telefone,
       c.endereco,
       c.bairro,
       c.cidade,
@@ -105,6 +107,7 @@ window.Campanha = window.Campanha || {};
           <article class="rounded-3xl bg-white p-4 shadow-card">
             <h4 class="text-base font-extrabold">${esc(c.nome)}</h4>
             <p class="mt-1 text-sm text-slate-600">${esc(c.cpf ? formatarCpf(c.cpf) : 'CPF não informado')}</p>
+            <p class="mt-1 text-sm text-slate-600">${c.telefone ? `<a href="tel:+55${esc(soDigitos(c.telefone))}" class="font-semibold text-brand-800">${esc(formatarTelefone(c.telefone))}</a>` : 'Telefone não informado'}</p>
             <p class="mt-1 text-sm text-slate-600">${esc(endereco || 'Endereço não informado')}</p>
             <p class="text-sm text-slate-500">${esc(local || '')}</p>
             <div class="mt-3 flex flex-wrap gap-2 text-xs font-bold">
@@ -122,7 +125,7 @@ window.Campanha = window.Campanha || {};
           </article>
         `;
       }).join(''),
-      colunas: ['Nome', 'CPF', 'Cidade', 'Folha', 'Banco', 'Início', 'Ações'],
+      colunas: ['Nome', 'CPF', 'Telefone', 'Cidade', 'Folha', 'Banco', 'Início', 'Ações'],
       linhas: itens.map((c) => {
         const cidade = [c.cidade, c.estado].filter(Boolean).join('/') || '—';
         const banco = c.folha && c.banco
@@ -132,6 +135,7 @@ window.Campanha = window.Campanha || {};
           <tr>
             <td class="font-semibold text-slate-900">${esc(c.nome)}</td>
             <td>${esc(c.cpf ? formatarCpf(c.cpf) : '—')}</td>
+            <td>${c.telefone ? `<a href="tel:+55${esc(soDigitos(c.telefone))}" class="font-semibold text-brand-800">${esc(formatarTelefone(c.telefone))}</a>` : '—'}</td>
             <td>${esc(cidade)}</td>
             <td>${c.folha ? esc(formatarMoeda(c.valor_mensal)) : 'Não'}</td>
             <td>${esc(banco)}</td>
@@ -262,7 +266,7 @@ window.Campanha = window.Campanha || {};
         <div id="view-colaboradores" data-view class="hidden space-y-4">
           ${C.ui.barraCrud({
             filtroId: 'filtro-colaboradores',
-            placeholder: 'Filtrar por nome, CPF, cidade ou bairro',
+            placeholder: 'Filtrar por nome, CPF, telefone, cidade ou bairro',
             botaoId: 'btn-novo-colaborador'
           })}
           <div id="lista-colaboradores"></div>
@@ -279,6 +283,9 @@ window.Campanha = window.Campanha || {};
 
                 <label class="mb-1 block text-sm font-semibold" for="col-cpf">CPF</label>
                 <input id="col-cpf" class="field mb-3" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="000.000.000-00" />
+
+                <label class="mb-1 block text-sm font-semibold" for="col-telefone">Telefone</label>
+                <input id="col-telefone" class="field mb-3" type="tel" inputmode="tel" autocomplete="tel" maxlength="16" placeholder="(00) 00000-0000" />
 
                 <label class="mb-1 block text-sm font-semibold" for="col-endereco">Endereço</label>
                 <input id="col-endereco" class="field mb-3" />
@@ -418,6 +425,9 @@ window.Campanha = window.Campanha || {};
       $('col-cpf').addEventListener('input', (ev) => {
         ev.target.value = formatarCpf(ev.target.value);
       });
+      $('col-telefone').addEventListener('input', (ev) => {
+        ev.target.value = formatarTelefone(ev.target.value);
+      });
       $('modal-colaborador').addEventListener('cadastro:fechar', resetForm);
       $('col-folha').addEventListener('click', () => setFolha(!folha));
       $('col-estado').addEventListener('change', () => {
@@ -427,8 +437,13 @@ window.Campanha = window.Campanha || {};
       $('form-colaborador').addEventListener('submit', async (ev) => {
         ev.preventDefault();
         const cpf = soDigitos($('col-cpf').value);
+        const telefone = soDigitos($('col-telefone').value);
         if (cpf && !cpfValido($('col-cpf').value)) {
           C.ui.toast('Informe um CPF válido.', 'erro');
+          return;
+        }
+        if (telefone && !telefoneValido(telefone)) {
+          C.ui.toast('Informe um telefone válido com DDD.', 'erro');
           return;
         }
         if (folha && ($('col-valor').value === '' || Number($('col-valor').value) < 0)) {
@@ -453,6 +468,7 @@ window.Campanha = window.Campanha || {};
             p_id: $('col-id').value || null,
             p_nome: $('col-nome').value,
             p_cpf: cpf || null,
+            p_telefone: telefone || null,
             p_endereco: $('col-endereco').value,
             p_numero: $('col-numero').value,
             p_complemento: $('col-complemento').value,
@@ -590,6 +606,7 @@ window.Campanha = window.Campanha || {};
       $('col-id').value = c.id;
       $('col-nome').value = c.nome || '';
       $('col-cpf').value = c.cpf ? formatarCpf(c.cpf) : '';
+      $('col-telefone').value = c.telefone ? formatarTelefone(c.telefone) : '';
       $('col-endereco').value = c.endereco || '';
       $('col-numero').value = c.numero || '';
       $('col-complemento').value = c.complemento || '';

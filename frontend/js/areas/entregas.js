@@ -2,7 +2,7 @@ window.Campanha = window.Campanha || {};
 
 (function (C) {
   const $ = (id) => C.utils.$(id);
-  const { esc, hojeISO, formatarData, formatarCpf, isAdmin, preencherSelect } = C.utils;
+  const { esc, hojeISO, formatarData, formatarCpf, formatarTelefone, soDigitos, isAdmin, preencherSelect } = C.utils;
 
   function opcoesMaterial() {
     return (C.state.cache.materiais || []).map((m) => ({
@@ -90,7 +90,11 @@ window.Campanha = window.Campanha || {};
 
   function podeEditar(e) {
     if (statusEntrega(e) === 'entregue') return false;
-    return Boolean(isAdmin() || e.pode_editar || e.pode_status);
+    return Boolean(e.pode_editar);
+  }
+
+  function podeAlterarStatus(e) {
+    return Boolean(e.pode_status);
   }
 
   function idsEntregadores(e) {
@@ -103,29 +107,82 @@ window.Campanha = window.Campanha || {};
     return (C.state.cache.colaboradores || []).find((c) => c.id === id) || {};
   }
 
+  function telefoneColaborador(fonte) {
+    const col = fonte?.colaborador_id ? colaboradorPorId(fonte.colaborador_id) : fonte || {};
+    return fonte?.colaborador_telefone || col.telefone || '';
+  }
+
+  function htmlTelefone(tel) {
+    if (!tel) return '';
+    return `<a href="tel:+55${esc(soDigitos(tel))}" class="mt-0.5 block text-xs font-semibold text-brand-800">${esc(formatarTelefone(tel))}</a>`;
+  }
+
+  function htmlNomeColaborador(e, extraClass = '') {
+    const col = colaboradorPorId(e.colaborador_id);
+    const nome = e.colaborador_nome || col.nome || '—';
+    return `<div class="min-w-0 ${extraClass}"><p class="font-semibold text-slate-900">${esc(nome)}</p>${htmlTelefone(telefoneColaborador(e))}</div>`;
+  }
+
+  function primeiroTexto(...vals) {
+    return vals.map((v) => String(v || '').trim()).find(Boolean) || '';
+  }
+
   function dadosEndereco(fonte) {
+    if (!fonte) {
+      return { endereco: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '' };
+    }
+    const usaColab = fonte.usa_endereco_colaborador !== false;
+    if (usaColab) {
+      return {
+        endereco: primeiroTexto(fonte.endereco, fonte.colaborador_endereco),
+        numero: primeiroTexto(fonte.numero, fonte.colaborador_numero),
+        complemento: primeiroTexto(fonte.complemento, fonte.colaborador_complemento),
+        bairro: primeiroTexto(fonte.bairro, fonte.colaborador_bairro),
+        cidade: primeiroTexto(fonte.cidade, fonte.colaborador_cidade),
+        estado: primeiroTexto(fonte.estado, fonte.colaborador_estado)
+      };
+    }
     return {
-      endereco: fonte?.endereco || '',
-      numero: fonte?.numero || '',
-      complemento: fonte?.complemento || '',
-      bairro: fonte?.bairro || '',
-      cidade: fonte?.cidade || '',
-      estado: fonte?.estado || ''
+      endereco: primeiroTexto(fonte.endereco),
+      numero: primeiroTexto(fonte.numero),
+      complemento: primeiroTexto(fonte.complemento),
+      bairro: primeiroTexto(fonte.bairro),
+      cidade: primeiroTexto(fonte.cidade),
+      estado: primeiroTexto(fonte.estado)
     };
+  }
+
+  function ruaComNumero(endereco, numero) {
+    const rua = String(endereco || '').trim();
+    const num = String(numero || '').trim();
+    if (!rua) return num;
+    if (!num) return rua;
+    const ruaNorm = rua.toLowerCase().replace(/\s+/g, ' ');
+    const numNorm = num.toLowerCase();
+    if (ruaNorm.includes(numNorm)) return rua;
+    return `${rua}, ${num}`;
   }
 
   function textoEndereco(fonte) {
     const d = dadosEndereco(fonte);
-    const rua = [d.endereco, d.numero, d.complemento].filter(Boolean).join(', ');
+    const rua = [ruaComNumero(d.endereco, d.numero), d.complemento].filter(Boolean).join(', ');
     const local = [d.bairro, [d.cidade, d.estado].filter(Boolean).join('/')].filter(Boolean).join(' · ');
     return [rua, local].filter(Boolean).join(' — ');
   }
 
-  function urlMaps(fonte) {
+  function consultaMaps(fonte) {
     const d = dadosEndereco(fonte);
-    const partes = [d.endereco, d.numero, d.complemento, d.bairro, d.cidade, d.estado, 'Brasil'].filter(Boolean);
-    if (!d.endereco && !d.cidade && !d.bairro) return '';
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(partes.join(', '))}`;
+    const rua = ruaComNumero(d.endereco, d.numero);
+    const cidadeUf = [d.cidade, d.estado].filter(Boolean).join(' - ');
+    const partes = [rua, d.bairro, cidadeUf, 'Brasil'].filter(Boolean);
+    if (!rua && !d.cidade && !d.bairro) return '';
+    return partes.join(', ');
+  }
+
+  function urlMaps(fonte) {
+    const consulta = consultaMaps(fonte);
+    if (!consulta) return '';
+    return `https://maps.google.com/maps?q=${encodeURIComponent(consulta)}`;
   }
 
   function botaoMaps(e, compacto) {
@@ -159,6 +216,21 @@ window.Campanha = window.Campanha || {};
     if ($('ent-bairro')) $('ent-bairro').value = d.bairro;
     await C.localidades.preencherEstados($('ent-estado'), d.estado);
     await C.localidades.preencherCidades($('ent-cidade'), d.estado, d.cidade);
+  }
+
+  function atualizarPreviewColaborador() {
+    const col = colaboradorPorId($('ent-colaborador')?.value);
+    const tel = $('ent-colab-tel');
+    if (tel) {
+      if (col.telefone) {
+        tel.innerHTML = `<a href="tel:+55${esc(soDigitos(col.telefone))}" class="font-semibold text-brand-800">${esc(formatarTelefone(col.telefone))}</a>`;
+        tel.classList.remove('hidden');
+      } else {
+        tel.innerHTML = '';
+        tel.classList.add('hidden');
+      }
+    }
+    atualizarPreviewEndereco();
   }
 
   function atualizarPreviewEndereco() {
@@ -197,28 +269,97 @@ window.Campanha = window.Campanha || {};
   }
 
   function botoesVisualizar(e, compacto) {
-    if (statusEntrega(e) !== 'entregue') return '';
     const cls = compacto
       ? 'rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700'
       : 'min-h-[44px] flex-1 rounded-xl bg-slate-100 text-sm font-bold text-slate-700';
     return `<button type="button" data-ent-acao="ver" data-id="${esc(e.id)}" class="${cls}">Visualizar</button>`;
   }
 
-  function botoesAdmin(e, compacto) {
-    const del = compacto
-      ? `<button type="button" data-del="entregas" data-id="${esc(e.id)}" class="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700">Excluir</button>`
-      : `<button type="button" data-del="entregas" data-id="${esc(e.id)}" class="mt-3 min-h-[44px] w-full rounded-xl bg-red-50 text-sm font-bold text-red-700">Excluir</button>`;
-    if (compacto) {
-      return `<div class="flex flex-wrap justify-end gap-2">${botoesEditar(e, true)}${botoesVisualizar(e, true)}${botaoMaps(e, true)}${del}</div>`;
+  function acoesEntrega(e, compacto) {
+    const status = statusEntrega(e);
+    const cls = compacto
+      ? 'rounded-lg px-3 py-1.5 text-xs font-bold'
+      : 'min-h-[44px] flex-1 rounded-xl text-sm font-bold';
+    const confirmar = !isAdmin() && podeAlterarStatus(e) && status !== 'entregue'
+      ? `<button type="button" data-ent-acao="entregue" data-id="${esc(e.id)}" class="${cls} bg-emerald-50 text-emerald-800">Confirmar entrega</button>`
+      : '';
+    const reagendar = !isAdmin() && podeAlterarStatus(e) && status !== 'entregue'
+      ? `<button type="button" data-ent-acao="reagendado" data-id="${esc(e.id)}" class="${cls} bg-violet-50 text-violet-800">Reagendar</button>`
+      : '';
+    const del = isAdmin()
+      ? `<button type="button" data-del="entregas" data-id="${esc(e.id)}" class="mt-3 min-h-[44px] w-full rounded-xl bg-red-50 text-sm font-bold text-red-700">Excluir</button>`
+      : '';
+    const principais = `${botoesEditar(e, false)}${botoesVisualizar(e, false)}${botaoMaps(e, false)}${confirmar}${reagendar}`;
+    return `${principais ? `<div class="mt-3 flex gap-2">${principais}</div>` : ''}${del}`;
+  }
+
+  function itemMenu(rotulo, attrs, { perigo = false, desativado = false } = {}) {
+    if (desativado) {
+      return `<span class="ent-menu-item is-off">${esc(rotulo)}</span>`;
     }
-    return `${(podeEditar(e) || statusEntrega(e) === 'entregue' || urlMaps(e)) ? `<div class="mt-3 flex gap-2">${botoesEditar(e, false)}${botoesVisualizar(e, false)}${botaoMaps(e, false)}</div>` : ''}${del}`;
+    return `<button type="button" role="menuitem" class="ent-menu-item${perigo ? ' is-danger' : ''}" ${attrs}>${esc(rotulo)}</button>`;
+  }
+
+  function menuAcoesGrid(e) {
+    const maps = urlMaps(e);
+    const editar = podeEditar(e)
+      ? itemMenu('Editar', `data-edit="entregas" data-id="${esc(e.id)}"`)
+      : itemMenu('Editar', '', { desativado: true });
+    const visualizar = itemMenu('Visualizar', `data-ent-acao="ver" data-id="${esc(e.id)}"`);
+    const mapa = maps
+      ? `<a role="menuitem" class="ent-menu-item" href="${esc(maps)}" target="_blank" rel="noopener noreferrer">Mapa</a>`
+      : itemMenu('Mapa', '', { desativado: true });
+    const excluir = isAdmin()
+      ? itemMenu('Excluir', `data-del="entregas" data-id="${esc(e.id)}"`, { perigo: true })
+      : itemMenu('Excluir', '', { desativado: true });
+    return `
+      <div class="ent-menu">
+        <button type="button" class="ent-menu-btn" data-ent-menu="${esc(e.id)}" aria-haspopup="true" aria-expanded="false">
+          Ações
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div class="ent-menu-lista" role="menu" hidden>
+          ${editar}
+          ${visualizar}
+          ${mapa}
+          ${excluir}
+        </div>
+      </div>
+    `;
+  }
+
+  function fecharMenusAcoes() {
+    document.querySelectorAll('.ent-menu.is-open').forEach((menu) => {
+      menu.classList.remove('is-open', 'is-up');
+      const btn = menu.querySelector('[data-ent-menu]');
+      const lista = menu.querySelector('.ent-menu-lista');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+      if (lista) lista.hidden = true;
+    });
+  }
+
+  function abrirMenuAcoes(btn) {
+    const wrap = btn.closest('.ent-menu');
+    const lista = wrap?.querySelector('.ent-menu-lista');
+    if (!wrap || !lista) return;
+    const jaAberto = wrap.classList.contains('is-open');
+    fecharMenusAcoes();
+    if (jaAberto) return;
+    wrap.classList.add('is-open');
+    btn.setAttribute('aria-expanded', 'true');
+    lista.hidden = false;
+    const rect = btn.getBoundingClientRect();
+    const altura = lista.offsetHeight || 180;
+    if (rect.bottom + altura + 12 > window.innerHeight && rect.top > altura) {
+      wrap.classList.add('is-up');
+    }
   }
 
   function linhaDado(rotulo, valor) {
     return `
       <div class="mb-3">
         <p class="text-xs font-bold uppercase tracking-wide text-slate-500">${esc(rotulo)}</p>
-        <p class="mt-0.5 text-sm font-semibold text-slate-800">${valor || '—'}</p>
+        <div class="mt-0.5 text-sm font-semibold text-slate-800">${valor || '—'}</div>
       </div>
     `;
   }
@@ -242,7 +383,7 @@ window.Campanha = window.Campanha || {};
     return `
       <div class="mb-3">${badgeStatus(statusEntrega(e))}</div>
       ${linhaDado('Data', formatarData(e.data_entrega))}
-      ${linhaDado('Colaborador', esc(e.colaborador_nome || col.nome || '—'))}
+      ${linhaDado('Colaborador', htmlNomeColaborador(e))}
       ${col.cpf ? linhaDado('CPF', esc(formatarCpf(col.cpf))) : ''}
       ${linhaDado(origem, esc(localEntrega))}
       ${maps ? `<a href="${esc(maps)}" target="_blank" rel="noopener noreferrer" class="mb-3 inline-flex min-h-[44px] items-center rounded-xl bg-sky-50 px-4 text-sm font-bold text-sky-800">Abrir no Maps</a>` : ''}
@@ -250,6 +391,10 @@ window.Campanha = window.Campanha || {};
       ${linhaDado('Entregue por', esc(nomesEntregadores(e)))}
       <p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Materiais</p>
       ${listaItens}
+      ${e.observacoes ? `<div class="mt-3">
+        <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Observações</p>
+        <p class="mt-0.5 whitespace-pre-wrap text-sm font-semibold text-slate-800">${esc(e.observacoes)}</p>
+      </div>` : ''}
     `;
   }
 
@@ -301,12 +446,13 @@ window.Campanha = window.Campanha || {};
     resetarStatusForm();
     if ($('ent-id')) $('ent-id').value = '';
     if ($('ent-recebeu')) $('ent-recebeu').value = '';
+    if ($('ent-obs')) $('ent-obs').value = '';
     if ($('ent-data')) $('ent-data').value = hojeISO();
     if ($('ent-salvar')) $('ent-salvar').textContent = 'Registrar entrega';
     resetarItens();
     limparEnderecoNovo();
     definirModoEndereco(true);
-    atualizarPreviewEndereco();
+    atualizarPreviewColaborador();
     if ($('ent-form-titulo')) $('ent-form-titulo').textContent = 'Nova entrega';
   }
 
@@ -318,7 +464,7 @@ window.Campanha = window.Campanha || {};
   }
 
   async function recarregarLista() {
-    const lista = await C.api.rpc('listar_entregas', { p_limite: isAdmin() ? 10000 : 200 });
+    const lista = await C.api.rpc('listar_entregas', { p_limite: 10000 });
     C.state.cache.entregas = lista || [];
     render();
   }
@@ -342,30 +488,10 @@ window.Campanha = window.Campanha || {};
 
   function controleStatus(e) {
     const status = statusEntrega(e);
-    if (isAdmin() && e.pode_status) {
+    if (isAdmin() && podeAlterarStatus(e)) {
       return `<select class="field no-chosen ent-status-sel ${C.utils.classeStatus(status)}" data-id="${esc(e.id)}" aria-label="Status da entrega">${opcoesStatusHtml(status)}</select>`;
     }
     return badgeStatus(status);
-  }
-
-  function botoesOperacao(e, compacto) {
-    if (isAdmin() || !e.pode_status) return '';
-    const status = statusEntrega(e);
-    const cls = compacto
-      ? 'rounded-lg px-3 py-1.5 text-xs font-bold'
-      : 'min-h-[44px] flex-1 rounded-xl text-sm font-bold';
-    const confirmar = status !== 'entregue'
-      ? `<button type="button" data-ent-acao="entregue" data-id="${esc(e.id)}" class="${cls} bg-emerald-50 text-emerald-800">Confirmar entrega</button>`
-      : '';
-    return `
-      <div class="${compacto ? 'flex flex-wrap justify-end gap-2' : 'mt-3 flex gap-2'}">
-        ${botoesEditar(e, compacto)}
-        ${botoesVisualizar(e, compacto)}
-        ${botaoMaps(e, compacto)}
-        ${confirmar}
-        ${status !== 'entregue' ? `<button type="button" data-ent-acao="reagendado" data-id="${esc(e.id)}" class="${cls} bg-violet-50 text-violet-800">Reagendar</button>` : ''}
-      </div>
-    `;
   }
 
   let filtroStatus = '';
@@ -396,7 +522,10 @@ window.Campanha = window.Campanha || {};
         return C.utils.matchFiltro(
           filtroTexto,
           e.colaborador_nome,
+          telefoneColaborador(e),
+          formatarTelefone(telefoneColaborador(e)),
           e.quem_recebeu,
+          e.observacoes,
           nomesEntregadores(e),
           resumoMateriais(itens),
           C.utils.rotuloStatus(statusEntrega(e)),
@@ -425,7 +554,7 @@ window.Campanha = window.Campanha || {};
     const lista = entregasVisiveis();
     if (!lista.length) {
       box.innerHTML = C.ui.vazio(
-        filtroTexto || filtroStatus ? 'Nenhuma entrega encontrada.' : (isAdmin() ? 'Nenhuma entrega registrada ainda.' : 'Nenhuma entrega vinculada a você.')
+        filtroTexto || filtroStatus ? 'Nenhuma entrega encontrada.' : 'Nenhuma entrega registrada ainda.'
       );
       return;
     }
@@ -440,19 +569,20 @@ window.Campanha = window.Campanha || {};
             <div class="min-w-0">
               <p class="text-[11px] font-bold uppercase tracking-wide text-brand-700">${esc(rotuloTipo(itens))}</p>
               <h4 class="text-base font-extrabold text-slate-900">${esc(itens.length === 1 ? itens[0].material_nome : `${itens.length} materiais`)}</h4>
-              <p class="mt-1 text-sm text-slate-600">${esc(e.colaborador_nome)}</p>
+              ${htmlNomeColaborador(e, 'mt-1')}
             </div>
             ${badgeStatus(status)}
           </div>
           <ul class="mt-3 space-y-1 text-sm text-slate-700">
             ${itens.map((i) => `<li>${esc(i.material_nome)}</li>`).join('')}
           </ul>
+          ${e.observacoes ? `<p class="mt-2 whitespace-pre-wrap text-sm text-slate-600">${esc(e.observacoes)}</p>` : ''}
           <div class="mt-3 grid grid-cols-1 gap-1 text-sm text-slate-600">
             <p>Entregue por: <strong class="text-slate-800">${esc(nomesEntregadores(e))}</strong></p>
             <p>${formatarData(e.data_entrega)}${e.bairro || e.colaborador_bairro ? ` · ${esc(e.bairro || e.colaborador_bairro)}` : ''}${e.cidade || e.colaborador_cidade ? `/${esc(e.cidade || e.colaborador_cidade)}` : ''}</p>
           </div>
-          ${e.pode_status && isAdmin() ? `<div class="mt-3">${controleStatus(e)}</div>` : ''}
-          ${isAdmin() ? botoesAdmin(e, false) : botoesOperacao(e, false)}
+          ${isAdmin() && podeAlterarStatus(e) ? `<div class="mt-3">${controleStatus(e)}</div>` : ''}
+          ${acoesEntrega(e, false)}
         </article>
       `;
       }).join(''),
@@ -464,10 +594,13 @@ window.Campanha = window.Campanha || {};
         <tr class="status-faixa-${esc(status)}">
           <td>${formatarData(e.data_entrega)}</td>
           <td>${controleStatus(e)}</td>
-          <td class="font-semibold text-slate-900">${esc(resumoMateriais(itens))}</td>
-          <td>${esc(e.colaborador_nome)}</td>
+          <td>
+            <p class="font-semibold text-slate-900">${esc(resumoMateriais(itens))}</p>
+            ${e.observacoes ? `<p class="mt-1 line-clamp-2 whitespace-pre-wrap text-xs font-medium text-slate-500">${esc(e.observacoes)}</p>` : ''}
+          </td>
+          <td>${htmlNomeColaborador(e)}</td>
           <td>${esc(nomesEntregadores(e))}</td>
-          <td>${isAdmin() ? botoesAdmin(e, true) : botoesOperacao(e, true)}</td>
+          <td class="ent-acoes">${menuAcoesGrid(e)}</td>
         </tr>
       `;
       })
@@ -484,7 +617,7 @@ window.Campanha = window.Campanha || {};
         <div id="view-entregas" data-view class="hidden space-y-4">
           ${C.ui.barraCrud({
             filtroId: 'filtro-entregas',
-            placeholder: 'Filtrar por colaborador, material ou quem recebeu',
+            placeholder: 'Filtrar por colaborador, material, quem recebeu ou observações',
             botaoId: 'btn-nova-entrega',
             rotulo: 'Cadastrar'
           })}
@@ -498,7 +631,8 @@ window.Campanha = window.Campanha || {};
               <form id="form-entrega">
                 <input type="hidden" id="ent-id" />
                 <label class="mb-1 block text-sm font-semibold" for="ent-colaborador">Colaborador</label>
-                <select id="ent-colaborador" class="field mb-3" required></select>
+                <select id="ent-colaborador" class="field mb-1" required></select>
+                <p id="ent-colab-tel" class="mb-3 hidden text-sm"></p>
 
                 <p class="mb-1 text-sm font-semibold">Local da entrega</p>
                 <div class="mb-3 grid gap-2">
@@ -569,6 +703,9 @@ window.Campanha = window.Campanha || {};
                 </div>
                 <div id="ent-itens"></div>
 
+                <label class="mb-1 mt-3 block text-sm font-semibold" for="ent-obs">Observações <span class="font-medium text-slate-400">(opcional)</span></label>
+                <textarea id="ent-obs" class="field mb-3 min-h-[88px] resize-y" maxlength="2000" rows="3" placeholder="Anotações desta entrega"></textarea>
+
                 <div class="mt-3 flex gap-2">
                   <button type="submit" id="ent-salvar" class="btn-primary flex-1">Registrar entrega</button>
                   <button type="button" id="btn-cancelar-entrega" class="min-h-[52px] flex-1 rounded-2xl bg-slate-100 font-bold text-slate-600">Cancelar</button>
@@ -620,7 +757,7 @@ window.Campanha = window.Campanha || {};
 
       $('ent-add-item').addEventListener('click', () => adicionarLinha());
 
-      $('ent-colaborador').addEventListener('change', atualizarPreviewEndereco);
+      $('ent-colaborador').addEventListener('change', atualizarPreviewColaborador);
       $('ent-local-colab').addEventListener('change', aplicarModoEndereco);
       $('ent-local-novo').addEventListener('change', aplicarModoEndereco);
       $('ent-estado').addEventListener('change', () => {
@@ -645,6 +782,7 @@ window.Campanha = window.Campanha || {};
         ev.preventDefault();
         const colaboradorId = $('ent-colaborador').value;
         const recebeu = $('ent-recebeu').value.trim();
+        const observacoes = ($('ent-obs')?.value || '').trim();
         const entregadores = isAdmin()
           ? C.utils.valoresSelect($('ent-entregadores'))
           : (C.state.usuario?.id ? [C.state.usuario.id] : []);
@@ -688,7 +826,8 @@ window.Campanha = window.Campanha || {};
             p_complemento: usaColab ? null : enderecoNovo.complemento,
             p_bairro: usaColab ? null : enderecoNovo.bairro,
             p_cidade: usaColab ? null : enderecoNovo.cidade,
-            p_estado: usaColab ? null : enderecoNovo.estado
+            p_estado: usaColab ? null : enderecoNovo.estado,
+            p_observacoes: observacoes || null
           });
           C.ui.fecharModal('modal-entrega');
           C.ui.toast(id ? 'Entrega atualizada.' : 'Entrega registrada.');
@@ -701,6 +840,14 @@ window.Campanha = window.Campanha || {};
       });
 
       $('lista-entregas').addEventListener('click', async (ev) => {
+        const toggle = ev.target.closest('[data-ent-menu]');
+        if (toggle) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          abrirMenuAcoes(toggle);
+          return;
+        }
+        if (ev.target.closest('.ent-menu-item')) fecharMenusAcoes();
         const btn = ev.target.closest('[data-ent-acao]');
         if (!btn) return;
         const id = btn.dataset.id;
@@ -711,6 +858,10 @@ window.Campanha = window.Campanha || {};
         }
         if (acao === 'reagendado') {
           const atual = (C.state.cache.entregas || []).find((x) => x.id === id);
+          if (!podeAlterarStatus(atual)) {
+            C.ui.toast('Somente quem está em Quem entregou pode alterar o status.', 'erro');
+            return;
+          }
           $('reag-id').value = id;
           $('reag-data').value = atual?.data_entrega || hojeISO();
           $('reag-form-titulo').textContent = 'Reagendar entrega';
@@ -718,6 +869,11 @@ window.Campanha = window.Campanha || {};
           return;
         }
         if (acao === 'entregue') {
+          const atual = (C.state.cache.entregas || []).find((x) => x.id === id);
+          if (!podeAlterarStatus(atual)) {
+            C.ui.toast('Somente quem está em Quem entregou pode alterar o status.', 'erro');
+            return;
+          }
           const ok = await C.ui.confirmar('Confirmar que esta entrega foi realizada?', { rotulo: 'Confirmar', perigo: false });
           if (!ok) return;
           try {
@@ -776,16 +932,23 @@ window.Campanha = window.Campanha || {};
         pintarChips();
         render();
       });
+
+      document.addEventListener('click', (ev) => {
+        if (!ev.target.closest('.ent-menu')) fecharMenusAcoes();
+      });
+      document.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape') fecharMenusAcoes();
+      });
     },
 
     async carregar() {
       const admin = isAdmin();
-      $('titulo-view').textContent = admin ? 'Entregas' : 'Minhas entregas';
+      $('titulo-view').textContent = 'Entregas';
       const sub = $('subtitulo-view');
       if (sub) {
         sub.textContent = admin
           ? 'Registro de saída de materiais'
-          : 'Cadastre, confirme ou reagende suas entregas';
+          : 'Todos veem as entregas; alterar só quem está em Quem entregou';
       }
       aplicarCamposAdmin();
       await C.api.listasBase();
@@ -798,8 +961,12 @@ window.Campanha = window.Campanha || {};
     async editar(id) {
       const e = (C.state.cache.entregas || []).find((x) => x.id === id);
       if (!e) return;
-      if (!podeEditar(e)) {
+      if (statusEntrega(e) === 'entregue') {
         C.ui.toast('Entrega concluída não pode ser editada.', 'erro');
+        return;
+      }
+      if (!podeEditar(e)) {
+        C.ui.toast('Somente quem está em Quem entregou pode alterar esta entrega.', 'erro');
         return;
       }
       aplicarCamposAdmin();
@@ -813,6 +980,7 @@ window.Campanha = window.Campanha || {};
         selecionados: idsEntregadores(e)
       });
       $('ent-recebeu').value = e.quem_recebeu || '';
+      if ($('ent-obs')) $('ent-obs').value = e.observacoes || '';
       $('ent-data').value = e.data_entrega || hojeISO();
       const status = statusEntrega(e);
       if ($('ent-status')) {
@@ -828,7 +996,7 @@ window.Campanha = window.Campanha || {};
         limparEnderecoNovo();
         definirModoEndereco(true);
       }
-      atualizarPreviewEndereco();
+      atualizarPreviewColaborador();
       $('ent-salvar').textContent = 'Salvar';
       $('ent-form-titulo').textContent = 'Editar entrega';
       C.ui.abrirModal('modal-entrega');

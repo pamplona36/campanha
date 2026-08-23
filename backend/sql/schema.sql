@@ -3,6 +3,10 @@
 -- Cole este script no SQL Editor do Supabase e clique em RUN (uma única vez).
 -- Banco já existente: rode os patches em backend/sql/ conforme a necessidade.
 -- UF/cidades (IBGE): backend/sql/patch-localidades.sql
+-- Telefone do colaborador: backend/sql/patch-colaborador-telefone.sql
+-- Observações da entrega: backend/sql/patch-entrega-observacoes.sql
+-- Todos veem as entregas; alterar só quem está em Quem entregou: backend/sql/patch-entregas-visao-geral.sql
+-- Maps com endereço correto: backend/sql/patch-entrega-maps.sql
 -- =============================================================================
 -- Login inicial após executar:
 --   usuário: admin
@@ -53,6 +57,7 @@ CREATE TABLE IF NOT EXISTS public.colaboradores (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   nome          text NOT NULL,
   cpf           text,
+  telefone      text,
   endereco      text,
   numero        text,
   complemento   text,
@@ -68,6 +73,7 @@ CREATE TABLE IF NOT EXISTS public.colaboradores (
   created_at    timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT colaboradores_nome_chk CHECK (length(trim(nome)) >= 2),
   CONSTRAINT colaboradores_cpf_chk CHECK (cpf IS NULL OR cpf ~ '^\d{11}$'),
+  CONSTRAINT colaboradores_telefone_chk CHECK (telefone IS NULL OR telefone ~ '^\d{10,11}$'),
   CONSTRAINT colaboradores_folha_valor_chk CHECK (
     (folha = false AND valor_mensal IS NULL)
     OR (folha = true AND valor_mensal IS NOT NULL AND valor_mensal >= 0)
@@ -78,6 +84,7 @@ CREATE TABLE IF NOT EXISTS public.colaboradores (
 );
 
 ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS cpf text;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS telefone text;
 ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS banco text;
 ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS agencia text;
 ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS conta text;
@@ -85,6 +92,10 @@ ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS conta text;
 ALTER TABLE public.colaboradores DROP CONSTRAINT IF EXISTS colaboradores_cpf_chk;
 ALTER TABLE public.colaboradores ADD CONSTRAINT colaboradores_cpf_chk
   CHECK (cpf IS NULL OR cpf ~ '^\d{11}$');
+
+ALTER TABLE public.colaboradores DROP CONSTRAINT IF EXISTS colaboradores_telefone_chk;
+ALTER TABLE public.colaboradores ADD CONSTRAINT colaboradores_telefone_chk
+  CHECK (telefone IS NULL OR telefone ~ '^\d{10,11}$');
 
 CREATE UNIQUE INDEX IF NOT EXISTS colaboradores_cpf_uidx
   ON public.colaboradores (cpf)
@@ -150,7 +161,9 @@ CREATE TABLE IF NOT EXISTS public.entregas (
   bairro          text,
   cidade          text,
   estado          text,
-  created_at      timestamptz NOT NULL DEFAULT now()
+  observacoes     text,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT entregas_observacoes_chk CHECK (observacoes IS NULL OR char_length(observacoes) <= 2000)
 );
 
 ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS usa_endereco_colaborador boolean NOT NULL DEFAULT true;
@@ -160,6 +173,10 @@ ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS complemento text;
 ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS bairro text;
 ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS cidade text;
 ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS estado text;
+ALTER TABLE public.entregas ADD COLUMN IF NOT EXISTS observacoes text;
+ALTER TABLE public.entregas DROP CONSTRAINT IF EXISTS entregas_observacoes_chk;
+ALTER TABLE public.entregas ADD CONSTRAINT entregas_observacoes_chk
+  CHECK (observacoes IS NULL OR char_length(observacoes) <= 2000);
 
 CREATE TABLE IF NOT EXISTS public.entrega_itens (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -527,6 +544,7 @@ BEGIN
         c.id,
         c.nome,
         CASE WHEN v_user.tipo = 'admin' THEN to_jsonb(c)->>'cpf' ELSE NULL END AS cpf,
+        c.telefone,
         c.endereco,
         c.numero,
         c.complemento,
@@ -592,6 +610,7 @@ END;
 $$;
 
 DROP FUNCTION IF EXISTS public.salvar_colaborador(text, uuid, text, text, text, text, text, text, text, boolean, numeric, date);
+DROP FUNCTION IF EXISTS public.salvar_colaborador(text, uuid, text, text, text, text, text, text, text, boolean, numeric, date, text, text, text, text);
 
 CREATE OR REPLACE FUNCTION public.salvar_colaborador(
   p_token        text,
@@ -609,7 +628,8 @@ CREATE OR REPLACE FUNCTION public.salvar_colaborador(
   p_cpf          text DEFAULT NULL,
   p_banco        text DEFAULT NULL,
   p_agencia      text DEFAULT NULL,
-  p_conta        text DEFAULT NULL
+  p_conta        text DEFAULT NULL,
+  p_telefone     text DEFAULT NULL
 )
 RETURNS json
 LANGUAGE plpgsql
@@ -622,6 +642,7 @@ DECLARE
   v_valor   numeric;
   v_uf      text;
   v_cpf     text;
+  v_tel     text;
   v_banco   text;
   v_agencia text;
   v_conta   text;
@@ -636,9 +657,15 @@ BEGIN
   END;
   v_cpf := regexp_replace(COALESCE(p_cpf, ''), '\D', '', 'g');
   v_cpf := CASE WHEN v_cpf = '' THEN NULL ELSE v_cpf END;
+  v_tel := regexp_replace(COALESCE(p_telefone, ''), '\D', '', 'g');
+  v_tel := CASE WHEN v_tel = '' THEN NULL ELSE v_tel END;
 
   IF v_cpf IS NOT NULL AND char_length(v_cpf) <> 11 THEN
     RAISE EXCEPTION 'Informe um CPF válido.';
+  END IF;
+
+  IF v_tel IS NOT NULL AND char_length(v_tel) NOT BETWEEN 10 AND 11 THEN
+    RAISE EXCEPTION 'Informe um telefone válido com DDD.';
   END IF;
 
   IF v_cpf IS NOT NULL AND EXISTS (
@@ -673,10 +700,10 @@ BEGIN
 
   IF p_id IS NULL THEN
     INSERT INTO public.colaboradores (
-      nome, cpf, endereco, numero, complemento, bairro, cidade, estado,
+      nome, cpf, telefone, endereco, numero, complemento, bairro, cidade, estado,
       folha, valor_mensal, banco, agencia, conta, data_inicio
     ) VALUES (
-      trim(p_nome), v_cpf, nullif(trim(p_endereco), ''), nullif(trim(p_numero), ''),
+      trim(p_nome), v_cpf, v_tel, nullif(trim(p_endereco), ''), nullif(trim(p_numero), ''),
       nullif(trim(p_complemento), ''), nullif(trim(p_bairro), ''),
       nullif(trim(p_cidade), ''), v_uf,
       v_folha, v_valor, v_banco, v_agencia, v_conta, p_data_inicio
@@ -686,6 +713,7 @@ BEGIN
     UPDATE public.colaboradores SET
       nome = trim(p_nome),
       cpf = v_cpf,
+      telefone = v_tel,
       endereco = nullif(trim(p_endereco), ''),
       numero = nullif(trim(p_numero), ''),
       complemento = nullif(trim(p_complemento), ''),
@@ -1207,6 +1235,7 @@ BEGIN
         e.id,
         e.colaborador_id,
         c.nome AS colaborador_nome,
+        to_jsonb(c)->>'telefone' AS colaborador_telefone,
         c.endereco AS colaborador_endereco,
         c.numero AS colaborador_numero,
         c.complemento AS colaborador_complemento,
@@ -1214,13 +1243,32 @@ BEGIN
         c.cidade AS colaborador_cidade,
         c.estado AS colaborador_estado,
         COALESCE(e.usa_endereco_colaborador, true) AS usa_endereco_colaborador,
-        COALESCE(e.endereco, c.endereco) AS endereco,
-        COALESCE(e.numero, c.numero) AS numero,
-        COALESCE(e.complemento, c.complemento) AS complemento,
-        COALESCE(e.bairro, c.bairro) AS bairro,
-        COALESCE(e.cidade, c.cidade) AS cidade,
-        COALESCE(e.estado, c.estado) AS estado,
+        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
+          THEN COALESCE(NULLIF(trim(e.endereco), ''), c.endereco)
+          ELSE e.endereco
+        END AS endereco,
+        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
+          THEN COALESCE(NULLIF(trim(e.numero), ''), c.numero)
+          ELSE e.numero
+        END AS numero,
+        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
+          THEN COALESCE(NULLIF(trim(e.complemento), ''), c.complemento)
+          ELSE e.complemento
+        END AS complemento,
+        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
+          THEN COALESCE(NULLIF(trim(e.bairro), ''), c.bairro)
+          ELSE e.bairro
+        END AS bairro,
+        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
+          THEN COALESCE(NULLIF(trim(e.cidade), ''), c.cidade)
+          ELSE e.cidade
+        END AS cidade,
+        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
+          THEN COALESCE(NULLIF(trim(e.estado), ''), c.estado)
+          ELSE e.estado
+        END AS estado,
         e.quem_recebeu,
+        e.observacoes,
         e.status::text AS status,
         COALESCE((
           SELECT json_agg(json_build_object(
@@ -1252,8 +1300,8 @@ BEGIN
           FROM public.entrega_entregadores ee4
           WHERE ee4.entrega_id = e.id
         ), '[]'::json) AS entregador_ids,
-        (v_admin
-          OR e.usuario_id = v_user.id
+        (
+          v_admin
           OR EXISTS (
             SELECT 1 FROM public.entrega_entregadores ee2
             WHERE ee2.entrega_id = e.id AND ee2.usuario_id = v_user.id
@@ -1263,7 +1311,6 @@ BEGIN
           e.status::text <> 'entregue'
           AND (
             v_admin
-            OR e.usuario_id = v_user.id
             OR EXISTS (
               SELECT 1 FROM public.entrega_entregadores ee5
               WHERE ee5.entrega_id = e.id AND ee5.usuario_id = v_user.id
@@ -1274,17 +1321,8 @@ BEGIN
       FROM public.entregas e
       JOIN public.colaboradores c ON c.id = e.colaborador_id
       JOIN public.usuarios u ON u.id = e.usuario_id
-      WHERE v_admin
-        OR e.usuario_id = v_user.id
-        OR EXISTS (
-          SELECT 1 FROM public.entrega_entregadores ee3
-          WHERE ee3.entrega_id = e.id AND ee3.usuario_id = v_user.id
-        )
       ORDER BY e.data_entrega DESC, e.created_at DESC
-      LIMIT CASE
-        WHEN v_admin THEN GREATEST(COALESCE(p_limite, 10000), 1)
-        ELSE GREATEST(COALESCE(p_limite, 200), 1)
-      END
+      LIMIT GREATEST(COALESCE(p_limite, 10000), 1)
     ) t
   ), '[]'::json);
 END;
@@ -1296,6 +1334,7 @@ DROP FUNCTION IF EXISTS public.salvar_entrega(text, uuid, text, date, uuid[], js
 DROP FUNCTION IF EXISTS public.salvar_entrega(text, uuid, text, date, uuid[], json, text);
 
 DROP FUNCTION IF EXISTS public.salvar_entrega(text, uuid, text, date, uuid[], json, text, uuid);
+DROP FUNCTION IF EXISTS public.salvar_entrega(text, uuid, text, date, uuid[], json, text, uuid, boolean, text, text, text, text, text, text);
 
 CREATE OR REPLACE FUNCTION public.salvar_entrega(
   p_token           text,
@@ -1312,7 +1351,8 @@ CREATE OR REPLACE FUNCTION public.salvar_entrega(
   p_complemento     text DEFAULT NULL,
   p_bairro          text DEFAULT NULL,
   p_cidade          text DEFAULT NULL,
-  p_estado          text DEFAULT NULL
+  p_estado          text DEFAULT NULL,
+  p_observacoes     text DEFAULT NULL
 )
 RETURNS json
 LANGUAGE plpgsql
@@ -1334,6 +1374,7 @@ DECLARE
   v_bairro   text;
   v_cidade   text;
   v_uf       text;
+  v_obs      text;
   v_col      public.colaboradores;
 BEGIN
   v_user := public._exige_login(p_token);
@@ -1393,6 +1434,11 @@ BEGIN
     END IF;
   END IF;
 
+  v_obs := NULLIF(trim(COALESCE(p_observacoes, '')), '');
+  IF v_obs IS NOT NULL AND char_length(v_obs) > 2000 THEN
+    RAISE EXCEPTION 'As observações podem ter no máximo 2000 caracteres.';
+  END IF;
+
   SELECT ARRAY(
     SELECT DISTINCT x
     FROM unnest(COALESCE(p_entregadores, ARRAY[v_user.id])) AS x
@@ -1413,13 +1459,12 @@ BEGIN
       RAISE EXCEPTION 'Entrega já concluída não pode ser editada.';
     END IF;
     v_pode := v_admin
-      OR v_atual.usuario_id = v_user.id
       OR EXISTS (
         SELECT 1 FROM public.entrega_entregadores ee
         WHERE ee.entrega_id = v_atual.id AND ee.usuario_id = v_user.id
       );
     IF NOT v_pode THEN
-      RAISE EXCEPTION 'Sem permissão para editar esta entrega.';
+      RAISE EXCEPTION 'Somente quem está em Quem entregou pode alterar esta entrega.';
     END IF;
     IF NOT v_admin THEN
       v_status := v_atual.status;
@@ -1436,7 +1481,8 @@ BEGIN
       complemento = v_comp,
       bairro = v_bairro,
       cidade = v_cidade,
-      estado = v_uf
+      estado = v_uf,
+      observacoes = v_obs
     WHERE id = p_id
     RETURNING id INTO v_id;
 
@@ -1445,14 +1491,16 @@ BEGIN
   ELSE
     INSERT INTO public.entregas (
       colaborador_id, quem_recebeu, data_entrega, status, usuario_id,
-      usa_endereco_colaborador, endereco, numero, complemento, bairro, cidade, estado
+      usa_endereco_colaborador, endereco, numero, complemento, bairro, cidade, estado,
+      observacoes
     ) VALUES (
       p_colaborador_id,
       NULLIF(trim(COALESCE(p_quem_recebeu, '')), ''),
       COALESCE(p_data_entrega, CURRENT_DATE),
       v_status,
       v_user.id,
-      v_usa_colab, v_end, v_num, v_comp, v_bairro, v_cidade, v_uf
+      v_usa_colab, v_end, v_num, v_comp, v_bairro, v_cidade, v_uf,
+      v_obs
     )
     RETURNING id INTO v_id;
   END IF;
@@ -1530,7 +1578,6 @@ BEGIN
   WHERE e.id = p_id
     AND (
       v_user.tipo = 'admin'
-      OR e.usuario_id = v_user.id
       OR EXISTS (
         SELECT 1 FROM public.entrega_entregadores ee
         WHERE ee.entrega_id = e.id AND ee.usuario_id = v_user.id
@@ -1539,7 +1586,7 @@ BEGIN
   RETURNING e.id INTO v_id;
 
   IF v_id IS NULL THEN
-    RAISE EXCEPTION 'Entrega não encontrada ou sem permissão para alterar o status.';
+    RAISE EXCEPTION 'Somente quem está em Quem entregou pode alterar o status.';
   END IF;
 
   RETURN json_build_object('ok', true, 'id', v_id, 'status', v_status::text);
@@ -1682,7 +1729,7 @@ GRANT EXECUTE ON FUNCTION public.excluir_usuario(text, uuid) TO anon, authentica
 GRANT EXECUTE ON FUNCTION public.listar_colaboradores(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_estados(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_cidades(text, text) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.salvar_colaborador(text, uuid, text, text, text, text, text, text, text, boolean, numeric, date, text, text, text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.salvar_colaborador(text, uuid, text, text, text, text, text, text, text, boolean, numeric, date, text, text, text, text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.excluir_colaborador(text, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_pagamentos_folha(text, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.obter_pagamento_folha(text, uuid) TO anon, authenticated;
@@ -1696,7 +1743,7 @@ GRANT EXECUTE ON FUNCTION public.listar_materiais(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.salvar_material(text, uuid, text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.excluir_material(text, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_entregas(text, integer) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.salvar_entrega(text, uuid, text, date, uuid[], json, text, uuid, boolean, text, text, text, text, text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.salvar_entrega(text, uuid, text, date, uuid[], json, text, uuid, boolean, text, text, text, text, text, text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.excluir_entrega(text, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.atualizar_status_entrega(text, uuid, text, date) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.relatorio_entregas(text, uuid, text, date, date, text) TO anon, authenticated;

@@ -47,7 +47,7 @@
   </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chosen/1.8.7/chosen.min.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/2.1.4/toastr.min.css" />
-  <link rel="stylesheet" href="css/styles.css?v=2" />
+  <link rel="stylesheet" href="css/styles.css?v=5" />
 </head>
 <body class="bg-slate-100 text-slate-800 antialiased">
 
@@ -72,10 +72,15 @@
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
       <header class="safe-top z-20 border-b border-slate-200/80 bg-brand-800 text-white lg:bg-white lg:text-slate-800">
         <div class="flex items-center justify-between px-4 py-3 lg:px-8">
-          <div class="min-w-0">
-            <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-gold-400 lg:text-brand-700">Campanha</p>
-            <h2 id="titulo-view" class="truncate text-lg font-extrabold leading-tight lg:text-2xl">Entregas</h2>
-            <p id="subtitulo-view" class="hidden text-sm text-slate-500 lg:block"></p>
+          <div class="flex min-w-0 items-center gap-3">
+            <button type="button" id="btn-mostrar-menu" class="hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-white lg:bg-slate-100 lg:text-brand-800" aria-label="Mostrar menu">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <div class="min-w-0">
+              <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-gold-400 lg:text-brand-700">Campanha</p>
+              <h2 id="titulo-view" class="truncate text-lg font-extrabold leading-tight lg:text-2xl">Entregas</h2>
+              <p id="subtitulo-view" class="hidden text-sm text-slate-500 lg:block"></p>
+            </div>
           </div>
           <div class="flex items-center gap-2 lg:hidden">
             <button type="button" data-instalar-app class="hidden h-11 rounded-2xl bg-white/10 px-3 text-xs font-bold" aria-label="Instalar no celular">
@@ -166,22 +171,22 @@
   <script src="js/config.js"></script>
   <script src="js/core/state.js"></script>
   <script src="js/core/supabase.js"></script>
-  <script src="js/core/utils.js?v=3"></script>
+  <script src="js/core/utils.js?v=4"></script>
   <script src="js/core/ui.js?v=2"></script>
   <script src="js/core/chosen.js"></script>
   <script src="js/core/bancos.js"></script>
   <script src="js/core/api.js"></script>
   <script src="js/core/auth.js"></script>
-  <script src="js/core/nav.js?v=3"></script>
+  <script src="js/core/nav.js?v=4"></script>
   <script src="js/core/pwa.js"></script>
   <script src="js/core/ocr.js?v=1"></script>
   <script src="js/core/localidades.js?v=1"></script>
   <script src="js/areas/login.js"></script>
-  <script src="js/areas/entregas.js?v=11"></script>
+  <script src="js/areas/entregas.js?v=18"></script>
   <script src="js/areas/relatorios.js?v=2"></script>
   <script src="js/areas/folha.js?v=1"></script>
   <script src="js/areas/usuarios.js"></script>
-  <script src="js/areas/colaboradores.js?v=6"></script>
+  <script src="js/areas/colaboradores.js?v=7"></script>
   <script src="js/areas/materiais.js"></script>
   <script src="js/areas/tipos.js"></script>
   <script src="js/app.js"></script>
