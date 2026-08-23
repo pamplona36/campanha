@@ -114,7 +114,7 @@ window.Campanha = window.Campanha || {};
           ${htmlPagamentos(item)}
         </article>
       `).join(''),
-      colunas: ['Colaborador', 'Situação', 'Folha', 'Pago', 'Banco', 'Ações'],
+      colunas: ['Colaborador', 'Situação', 'Folha', 'Pago', 'Ações'],
       linhas: itens.map((item) => {
         const pags = Array.isArray(item.pagamentos) ? item.pagamentos : [];
         const acoes = pags.length
@@ -129,7 +129,6 @@ window.Campanha = window.Campanha || {};
             <td>${badgeSituacao(item.situacao)}</td>
             <td>${esc(formatarMoeda(item.valor_mensal))}</td>
             <td>${item.situacao === 'pago' ? esc(formatarMoeda(item.valor_pago)) : '—'}</td>
-            <td>${esc(dadosBanco(item))}</td>
             <td><div class="flex flex-wrap justify-end gap-2">${acoes}</div></td>
           </tr>
         `;
