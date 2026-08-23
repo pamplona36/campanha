@@ -370,6 +370,101 @@ select.ent-status-sel {
   border-bottom: 0;
 }
 
+.user-menu {
+  position: relative;
+}
+.user-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  max-width: min(220px, 54vw);
+  min-height: 48px;
+  padding: 0.35rem 0.65rem 0.35rem 0.35rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #fff;
+  box-shadow: 0 6px 16px -10px rgba(8, 44, 107, 0.28);
+  color: #082c6b;
+}
+.user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 0.55rem;
+  background: #0B3D91;
+  color: #fff;
+}
+.user-menu-chevron {
+  transition: transform 0.16s ease;
+}
+.user-menu.is-open .user-menu-chevron {
+  transform: rotate(180deg);
+}
+.user-menu-lista {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  min-width: 232px;
+  padding: 0.4rem;
+  border: 1px solid #e8eef6;
+  border-radius: 0.85rem;
+  background: #fff;
+  box-shadow: 0 16px 32px -12px rgba(8, 44, 107, 0.32);
+}
+.user-menu-lista[hidden] {
+  display: none;
+}
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.65rem;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 700;
+  color: #082c6b;
+}
+.user-menu-item:hover {
+  background: #f1f5f9;
+}
+.user-menu-item.is-danger {
+  color: #dc2626;
+}
+.user-menu-item.is-danger:hover {
+  background: #fef2f2;
+}
+.user-menu-sep {
+  height: 1px;
+  margin: 0.3rem 0.55rem;
+  background: #e2e8f0;
+}
+@media (max-width: 379px) {
+  .user-menu-texto {
+    display: none;
+  }
+  .user-menu-btn {
+    max-width: none;
+    padding-right: 0.45rem;
+  }
+}
+@media (min-width: 1024px) {
+  .user-menu-btn {
+    max-width: 280px;
+    min-height: 52px;
+    padding: 0.4rem 0.75rem 0.4rem 0.4rem;
+  }
+  .user-avatar {
+    width: 40px;
+    height: 40px;
+  }
+}
+
 #tela-app.sidebar-oculto #sidebar {
   display: none !important;
 }
@@ -379,10 +474,12 @@ select.ent-status-sel {
   }
 }
 
-#lista-entregas .table-wrap {
+#lista-entregas .table-wrap,
+#lista-colaboradores .table-wrap {
   overflow: visible;
 }
-#lista-entregas .data-table td.ent-acoes {
+#lista-entregas .data-table td.ent-acoes,
+#lista-colaboradores .data-table td.ent-acoes {
   text-align: right;
   white-space: nowrap;
 }

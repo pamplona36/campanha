@@ -131,15 +131,16 @@ window.Campanha = window.Campanha || {};
     if (!fonte) {
       return { endereco: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '' };
     }
+    const col = fonte.colaborador_id ? colaboradorPorId(fonte.colaborador_id) : {};
     const usaColab = fonte.usa_endereco_colaborador !== false;
     if (usaColab) {
       return {
-        endereco: primeiroTexto(fonte.endereco, fonte.colaborador_endereco),
-        numero: primeiroTexto(fonte.numero, fonte.colaborador_numero),
-        complemento: primeiroTexto(fonte.complemento, fonte.colaborador_complemento),
-        bairro: primeiroTexto(fonte.bairro, fonte.colaborador_bairro),
-        cidade: primeiroTexto(fonte.cidade, fonte.colaborador_cidade),
-        estado: primeiroTexto(fonte.estado, fonte.colaborador_estado)
+        endereco: primeiroTexto(col.endereco, fonte.colaborador_endereco, fonte.endereco),
+        numero: primeiroTexto(col.numero, fonte.colaborador_numero, fonte.numero),
+        complemento: primeiroTexto(col.complemento, fonte.colaborador_complemento, fonte.complemento),
+        bairro: primeiroTexto(col.bairro, fonte.colaborador_bairro, fonte.bairro),
+        cidade: primeiroTexto(col.cidade, fonte.colaborador_cidade, fonte.cidade),
+        estado: primeiroTexto(col.estado, fonte.colaborador_estado, fonte.estado)
       };
     }
     return {
@@ -157,9 +158,9 @@ window.Campanha = window.Campanha || {};
     const num = String(numero || '').trim();
     if (!rua) return num;
     if (!num) return rua;
-    const ruaNorm = rua.toLowerCase().replace(/\s+/g, ' ');
-    const numNorm = num.toLowerCase();
-    if (ruaNorm.includes(numNorm)) return rua;
+    const ruaNorm = rua.toLowerCase().replace(/\s+/g, ' ').replace(/[.,]$/, '');
+    const numNorm = num.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`(?:^|[,\\s])${numNorm}$`).test(ruaNorm)) return rua;
     return `${rua}, ${num}`;
   }
 
@@ -173,16 +174,24 @@ window.Campanha = window.Campanha || {};
   function consultaMaps(fonte) {
     const d = dadosEndereco(fonte);
     const rua = ruaComNumero(d.endereco, d.numero);
-    const cidadeUf = [d.cidade, d.estado].filter(Boolean).join(' - ');
-    const partes = [rua, d.bairro, cidadeUf, 'Brasil'].filter(Boolean);
-    if (!rua && !d.cidade && !d.bairro) return '';
+    const partes = [rua, d.bairro, d.cidade, d.estado, 'Brasil'].filter(Boolean);
+    if (!rua && !d.cidade) return '';
     return partes.join(', ');
   }
 
   function urlMaps(fonte) {
     const consulta = consultaMaps(fonte);
     if (!consulta) return '';
-    return `https://maps.google.com/maps?q=${encodeURIComponent(consulta)}`;
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(consulta)}`;
+  }
+
+  function abrirMaps(fonte) {
+    const url = urlMaps(fonte);
+    if (!url) {
+      C.ui.toast('Endereço insuficiente para abrir o mapa.', 'erro');
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
 
   function botaoMaps(e, compacto) {
@@ -307,7 +316,7 @@ window.Campanha = window.Campanha || {};
       : itemMenu('Editar', '', { desativado: true });
     const visualizar = itemMenu('Visualizar', `data-ent-acao="ver" data-id="${esc(e.id)}"`);
     const mapa = maps
-      ? `<a role="menuitem" class="ent-menu-item" href="${esc(maps)}" target="_blank" rel="noopener noreferrer">Mapa</a>`
+      ? itemMenu('Mapa', `data-ent-acao="mapa" data-id="${esc(e.id)}"`)
       : itemMenu('Mapa', '', { desativado: true });
     const excluir = isAdmin()
       ? itemMenu('Excluir', `data-del="entregas" data-id="${esc(e.id)}"`, { perigo: true })
@@ -847,11 +856,16 @@ window.Campanha = window.Campanha || {};
           abrirMenuAcoes(toggle);
           return;
         }
-        if (ev.target.closest('.ent-menu-item')) fecharMenusAcoes();
+        if (ev.target.closest('.ent-menu-item')) setTimeout(fecharMenusAcoes, 0);
         const btn = ev.target.closest('[data-ent-acao]');
         if (!btn) return;
         const id = btn.dataset.id;
         const acao = btn.dataset.entAcao;
+        if (acao === 'mapa') {
+          const atual = (C.state.cache.entregas || []).find((x) => x.id === id);
+          abrirMaps(atual);
+          return;
+        }
         if (acao === 'ver') {
           abrirVisualizacao(id);
           return;

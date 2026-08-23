@@ -1,5 +1,5 @@
--- Maps: usa o endereço da entrega sem misturar com o do colaborador.
--- Rode no SQL Editor do Supabase.
+-- Maps: devolve o endereço gravado na entrega sem misturar com o do colaborador.
+-- Rode no SQL Editor do Supabase (pode rodar de novo).
 
 CREATE OR REPLACE FUNCTION public.listar_entregas(p_token text, p_limite integer DEFAULT 200)
 RETURNS json
@@ -30,30 +30,12 @@ BEGIN
         c.cidade AS colaborador_cidade,
         c.estado AS colaborador_estado,
         COALESCE(e.usa_endereco_colaborador, true) AS usa_endereco_colaborador,
-        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
-          THEN COALESCE(NULLIF(trim(e.endereco), ''), c.endereco)
-          ELSE e.endereco
-        END AS endereco,
-        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
-          THEN COALESCE(NULLIF(trim(e.numero), ''), c.numero)
-          ELSE e.numero
-        END AS numero,
-        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
-          THEN COALESCE(NULLIF(trim(e.complemento), ''), c.complemento)
-          ELSE e.complemento
-        END AS complemento,
-        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
-          THEN COALESCE(NULLIF(trim(e.bairro), ''), c.bairro)
-          ELSE e.bairro
-        END AS bairro,
-        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
-          THEN COALESCE(NULLIF(trim(e.cidade), ''), c.cidade)
-          ELSE e.cidade
-        END AS cidade,
-        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
-          THEN COALESCE(NULLIF(trim(e.estado), ''), c.estado)
-          ELSE e.estado
-        END AS estado,
+        e.endereco,
+        e.numero,
+        e.complemento,
+        e.bairro,
+        e.cidade,
+        e.estado,
         e.quem_recebeu,
         to_jsonb(e)->>'observacoes' AS observacoes,
         e.status::text AS status,

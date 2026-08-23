@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   C.nav.injetarTelas();
   C.ui.bind();
   C.nav.bind();
+  if (C.conta) C.conta.bind();
   if (C.pwa) C.pwa.init();
   Object.values(C.areas).forEach((area) => area.bind && area.bind());
   C.chosen.aplicar();

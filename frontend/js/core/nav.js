@@ -133,12 +133,9 @@ window.Campanha = window.Campanha || {};
     mostrarApp() {
       $('tela-login').classList.add('hidden');
       $('tela-app').classList.remove('hidden');
-      const rotulo = `${C.utils.primeiroNome(C.state.usuario.nome)} · ${C.utils.isAdmin() ? 'Admin' : 'Equipe'}`;
-      $('nome-usuario').textContent = rotulo;
-      const sideUser = $('sidebar-user');
-      if (sideUser) sideUser.textContent = rotulo;
       const sideVer = $('sidebar-versao');
       if (sideVer) sideVer.textContent = C.rotuloVersao ? C.rotuloVersao() : '';
+      if (C.conta) C.conta.atualizar();
       C.nav.montar();
       aplicarMenuLateral();
       C.nav.irPara('entregas');
@@ -190,14 +187,6 @@ window.Campanha = window.Campanha || {};
     },
 
     bind() {
-      async function sair() {
-        const ok = await C.ui.confirmar('Deseja sair do sistema?', { rotulo: 'Sair', perigo: false });
-        if (ok) await C.auth.sair();
-      }
-      $('btn-sair').addEventListener('click', sair);
-      const btnSairSide = $('btn-sair-sidebar');
-      if (btnSairSide) btnSairSide.addEventListener('click', sair);
-
       $('nav-itens').addEventListener('click', (ev) => {
         const btn = ev.target.closest('[data-nav]');
         if (!btn) return;

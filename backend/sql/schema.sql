@@ -4,6 +4,8 @@
 -- Banco já existente: rode os patches em backend/sql/ conforme a necessidade.
 -- UF/cidades (IBGE): backend/sql/patch-localidades.sql
 -- Telefone do colaborador: backend/sql/patch-colaborador-telefone.sql
+-- Banco/agência/conta opcionais: backend/sql/patch-colaborador-banco-opcional.sql
+-- Perfil e senha do usuário logado: backend/sql/patch-perfil-usuario.sql
 -- Observações da entrega: backend/sql/patch-entrega-observacoes.sql
 -- Todos veem as entregas; alterar só quem está em Quem entregou: backend/sql/patch-entregas-visao-geral.sql
 -- Maps com endereço correto: backend/sql/patch-entrega-maps.sql
@@ -393,6 +395,70 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.atualizar_meu_perfil(p_token text, p_nome text)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  v_user public.usuarios;
+BEGIN
+  v_user := public._exige_login(p_token);
+  IF p_nome IS NULL OR length(trim(p_nome)) < 2 THEN
+    RAISE EXCEPTION 'Informe o nome.';
+  END IF;
+
+  UPDATE public.usuarios
+  SET nome = trim(p_nome)
+  WHERE id = v_user.id
+  RETURNING * INTO v_user;
+
+  RETURN json_build_object(
+    'ok', true,
+    'usuario', json_build_object(
+      'id', v_user.id,
+      'nome', v_user.nome,
+      'login', v_user.login,
+      'tipo', v_user.tipo
+    )
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.alterar_minha_senha(
+  p_token       text,
+  p_senha_atual text,
+  p_senha_nova  text
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  v_user public.usuarios;
+BEGIN
+  v_user := public._exige_login(p_token);
+
+  IF p_senha_atual IS NULL OR v_user.senha_hash <> extensions.crypt(p_senha_atual, v_user.senha_hash) THEN
+    RAISE EXCEPTION 'Senha atual incorreta.';
+  END IF;
+  IF p_senha_nova IS NULL OR length(p_senha_nova) < 6 THEN
+    RAISE EXCEPTION 'A nova senha deve ter no mínimo 6 caracteres.';
+  END IF;
+  IF p_senha_atual = p_senha_nova THEN
+    RAISE EXCEPTION 'A nova senha deve ser diferente da atual.';
+  END IF;
+
+  UPDATE public.usuarios
+  SET senha_hash = extensions.crypt(p_senha_nova, extensions.gen_salt('bf'))
+  WHERE id = v_user.id;
+
+  RETURN json_build_object('ok', true);
+END;
+$$;
+
 -- -----------------------------------------------------------------------------
 -- Usuários (admin)
 -- -----------------------------------------------------------------------------
@@ -676,17 +742,12 @@ BEGIN
   END IF;
 
   IF v_folha THEN
-    v_banco   := lpad(regexp_replace(COALESCE(p_banco, ''), '\D', '', 'g'), 3, '0');
+    v_banco := regexp_replace(COALESCE(p_banco, ''), '\D', '', 'g');
+    v_banco := CASE WHEN v_banco = '' THEN NULL ELSE lpad(v_banco, 3, '0') END;
     v_agencia := nullif(trim(COALESCE(p_agencia, '')), '');
     v_conta   := nullif(trim(COALESCE(p_conta, '')), '');
-    IF v_banco IS NULL OR char_length(v_banco) <> 3 OR v_banco = '000' THEN
-      RAISE EXCEPTION 'Selecione o banco.';
-    END IF;
-    IF v_agencia IS NULL THEN
-      RAISE EXCEPTION 'Informe a agência.';
-    END IF;
-    IF v_conta IS NULL THEN
-      RAISE EXCEPTION 'Informe a conta.';
+    IF v_banco IS NOT NULL AND (char_length(v_banco) <> 3 OR v_banco = '000') THEN
+      RAISE EXCEPTION 'Selecione um banco válido.';
     END IF;
   ELSE
     v_banco := NULL;
@@ -1243,30 +1304,12 @@ BEGIN
         c.cidade AS colaborador_cidade,
         c.estado AS colaborador_estado,
         COALESCE(e.usa_endereco_colaborador, true) AS usa_endereco_colaborador,
-        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
-          THEN COALESCE(NULLIF(trim(e.endereco), ''), c.endereco)
-          ELSE e.endereco
-        END AS endereco,
-        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
-          THEN COALESCE(NULLIF(trim(e.numero), ''), c.numero)
-          ELSE e.numero
-        END AS numero,
-        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
-          THEN COALESCE(NULLIF(trim(e.complemento), ''), c.complemento)
-          ELSE e.complemento
-        END AS complemento,
-        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
-          THEN COALESCE(NULLIF(trim(e.bairro), ''), c.bairro)
-          ELSE e.bairro
-        END AS bairro,
-        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
-          THEN COALESCE(NULLIF(trim(e.cidade), ''), c.cidade)
-          ELSE e.cidade
-        END AS cidade,
-        CASE WHEN COALESCE(e.usa_endereco_colaborador, true)
-          THEN COALESCE(NULLIF(trim(e.estado), ''), c.estado)
-          ELSE e.estado
-        END AS estado,
+        e.endereco,
+        e.numero,
+        e.complemento,
+        e.bairro,
+        e.cidade,
+        e.estado,
         e.quem_recebeu,
         e.observacoes,
         e.status::text AS status,
@@ -1722,6 +1765,8 @@ GRANT USAGE ON SCHEMA public TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.login(text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.logout(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.me(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.atualizar_meu_perfil(text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.alterar_minha_senha(text, text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_usuarios(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_equipe(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.salvar_usuario(text, uuid, text, text, text, text) TO anon, authenticated;

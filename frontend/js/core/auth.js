@@ -50,6 +50,11 @@ window.Campanha = window.Campanha || {};
       C.nav.mostrarLogin();
     },
 
+    atualizarSessao(usuario) {
+      C.state.usuario = { ...C.state.usuario, ...usuario };
+      salvarSessaoLocal();
+    },
+
     async restaurar() {
       const local = lerSessaoLocal();
       if (!local?.token || !C.config.ok()) return false;

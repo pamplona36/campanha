@@ -18,9 +18,6 @@ window.Campanha = window.Campanha || {};
     btn.setAttribute('aria-pressed', String(folha));
     $('wrap-folha-dados').classList.toggle('hidden', !folha);
     $('col-valor').required = folha;
-    $('col-banco').required = folha;
-    $('col-agencia').required = folha;
-    $('col-conta').required = folha;
     if (!folha) {
       $('col-valor').value = '';
       C.utils.definirSelect($('col-banco'), '');
@@ -71,15 +68,69 @@ window.Campanha = window.Campanha || {};
     ));
   }
 
-  function botoesColaborador(c, compacto) {
-    const pagar = c.folha
-      ? (compacto
-        ? `<button type="button" data-col-acao="pagar" data-id="${esc(c.id)}" class="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800">Pagamento</button>`
-        : `<button type="button" data-col-acao="pagar" data-id="${esc(c.id)}" class="min-h-[44px] flex-1 rounded-xl bg-emerald-50 text-sm font-bold text-emerald-800">Pagamento</button>`)
-      : '';
-    if (compacto) {
-      return `<div class="flex flex-wrap justify-end gap-2">${pagar}${C.ui.botoesLinha(c.id, 'colaboradores')}</div>`;
+  function htmlNomeColaborador(c) {
+    const cpf = c.cpf ? formatarCpf(c.cpf) : 'CPF não informado';
+    const tel = c.telefone
+      ? `<a href="tel:+55${esc(soDigitos(c.telefone))}" class="font-semibold text-brand-800">${esc(formatarTelefone(c.telefone))}</a>`
+      : 'Telefone não informado';
+    return `
+      <div class="min-w-0">
+        <p class="font-semibold text-slate-900">${esc(c.nome)}</p>
+        <p class="mt-0.5 text-xs text-slate-500">${esc(cpf)}</p>
+        <p class="mt-0.5 text-xs text-slate-500">${tel}</p>
+      </div>
+    `;
+  }
+
+  function fecharMenusAcoes() {
+    document.querySelectorAll('#lista-colaboradores .ent-menu.is-open').forEach((menu) => {
+      menu.classList.remove('is-open', 'is-up');
+      const btn = menu.querySelector('[data-col-menu]');
+      const lista = menu.querySelector('.ent-menu-lista');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+      if (lista) lista.hidden = true;
+    });
+  }
+
+  function abrirMenuAcoes(btn) {
+    const wrap = btn.closest('.ent-menu');
+    const lista = wrap?.querySelector('.ent-menu-lista');
+    if (!wrap || !lista) return;
+    const jaAberto = wrap.classList.contains('is-open');
+    fecharMenusAcoes();
+    if (jaAberto) return;
+    wrap.classList.add('is-open');
+    btn.setAttribute('aria-expanded', 'true');
+    lista.hidden = false;
+    const rect = btn.getBoundingClientRect();
+    const altura = lista.offsetHeight || 120;
+    if (rect.bottom + altura + 12 > window.innerHeight && rect.top > altura) {
+      wrap.classList.add('is-up');
     }
+  }
+
+  function menuAcoesGrid(c) {
+    const pagar = c.folha
+      ? `<button type="button" role="menuitem" class="ent-menu-item" data-col-acao="pagar" data-id="${esc(c.id)}">Pagamento</button>`
+      : `<span class="ent-menu-item is-off">Pagamento</span>`;
+    return `
+      <div class="ent-menu">
+        <button type="button" class="ent-menu-btn" data-col-menu="${esc(c.id)}" aria-haspopup="true" aria-expanded="false">
+          Ações
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div class="ent-menu-lista" role="menu" hidden>
+          <button type="button" role="menuitem" class="ent-menu-item" data-edit="colaboradores" data-id="${esc(c.id)}">Editar</button>
+          ${pagar}
+        </div>
+      </div>
+    `;
+  }
+
+  function botoesColaborador(c) {
+    const pagar = c.folha
+      ? `<button type="button" data-col-acao="pagar" data-id="${esc(c.id)}" class="min-h-[44px] flex-1 rounded-xl bg-emerald-50 text-sm font-bold text-emerald-800">Pagamento</button>`
+      : '';
     return `
       <div class="mt-3 flex gap-2">
         ${pagar}
@@ -105,9 +156,7 @@ window.Campanha = window.Campanha || {};
         const local = [c.bairro, [c.cidade, c.estado].filter(Boolean).join('/')].filter(Boolean).join(' · ');
         return `
           <article class="rounded-3xl bg-white p-4 shadow-card">
-            <h4 class="text-base font-extrabold">${esc(c.nome)}</h4>
-            <p class="mt-1 text-sm text-slate-600">${esc(c.cpf ? formatarCpf(c.cpf) : 'CPF não informado')}</p>
-            <p class="mt-1 text-sm text-slate-600">${c.telefone ? `<a href="tel:+55${esc(soDigitos(c.telefone))}" class="font-semibold text-brand-800">${esc(formatarTelefone(c.telefone))}</a>` : 'Telefone não informado'}</p>
+            ${htmlNomeColaborador(c)}
             <p class="mt-1 text-sm text-slate-600">${esc(endereco || 'Endereço não informado')}</p>
             <p class="text-sm text-slate-500">${esc(local || '')}</p>
             <div class="mt-3 flex flex-wrap gap-2 text-xs font-bold">
@@ -121,26 +170,19 @@ window.Campanha = window.Campanha || {};
               ${c.folha && c.ultimo_pagamento ? `<span class="rounded-full bg-slate-100 px-3 py-1 text-slate-600">Último pgto ${formatarData(c.ultimo_pagamento)}</span>` : ''}
               ${c.data_inicio ? `<span class="rounded-full bg-slate-100 px-3 py-1 text-slate-600">Desde ${formatarData(c.data_inicio)}</span>` : ''}
             </div>
-            ${botoesColaborador(c, false)}
+            ${botoesColaborador(c)}
           </article>
         `;
       }).join(''),
-      colunas: ['Nome', 'CPF', 'Telefone', 'Cidade', 'Folha', 'Banco', 'Início', 'Ações'],
+      colunas: ['Nome', 'Cidade', 'Início', 'Ações'],
       linhas: itens.map((c) => {
         const cidade = [c.cidade, c.estado].filter(Boolean).join('/') || '—';
-        const banco = c.folha && c.banco
-          ? `${rotuloBanco(c.banco)}${c.agencia ? ` · Ag. ${c.agencia}` : ''}${c.conta ? ` · Cc. ${c.conta}` : ''}`
-          : '—';
         return `
           <tr>
-            <td class="font-semibold text-slate-900">${esc(c.nome)}</td>
-            <td>${esc(c.cpf ? formatarCpf(c.cpf) : '—')}</td>
-            <td>${c.telefone ? `<a href="tel:+55${esc(soDigitos(c.telefone))}" class="font-semibold text-brand-800">${esc(formatarTelefone(c.telefone))}</a>` : '—'}</td>
+            <td>${htmlNomeColaborador(c)}</td>
             <td>${esc(cidade)}</td>
-            <td>${c.folha ? esc(formatarMoeda(c.valor_mensal)) : 'Não'}</td>
-            <td>${esc(banco)}</td>
             <td>${c.data_inicio ? formatarData(c.data_inicio) : '—'}</td>
-            <td>${botoesColaborador(c, true)}</td>
+            <td class="ent-acoes">${menuAcoesGrid(c)}</td>
           </tr>
         `;
       })
@@ -334,16 +376,16 @@ window.Campanha = window.Campanha || {};
                     <input id="col-valor" type="number" min="0" step="0.01" inputmode="decimal" class="field" placeholder="0,00" />
                   </div>
                   <div>
-                    <label class="mb-1 block text-sm font-semibold" for="col-banco">Banco</label>
+                    <label class="mb-1 block text-sm font-semibold" for="col-banco">Banco <span class="font-medium text-slate-400">(opcional)</span></label>
                     <select id="col-banco" class="field" data-placeholder="Selecione o banco"></select>
                   </div>
                   <div class="grid grid-cols-2 gap-3">
                     <div>
-                      <label class="mb-1 block text-sm font-semibold" for="col-agencia">Agência</label>
+                      <label class="mb-1 block text-sm font-semibold" for="col-agencia">Agência <span class="font-medium text-slate-400">(opcional)</span></label>
                       <input id="col-agencia" class="field" inputmode="numeric" autocomplete="off" />
                     </div>
                     <div>
-                      <label class="mb-1 block text-sm font-semibold" for="col-conta">Conta</label>
+                      <label class="mb-1 block text-sm font-semibold" for="col-conta">Conta <span class="font-medium text-slate-400">(opcional)</span></label>
                       <input id="col-conta" class="field" inputmode="numeric" autocomplete="off" />
                     </div>
                   </div>
@@ -450,18 +492,6 @@ window.Campanha = window.Campanha || {};
           C.ui.toast('Informe o valor mensal da folha.', 'erro');
           return;
         }
-        if (folha && !$('col-banco').value) {
-          C.ui.toast('Selecione o banco.', 'erro');
-          return;
-        }
-        if (folha && !$('col-agencia').value.trim()) {
-          C.ui.toast('Informe a agência.', 'erro');
-          return;
-        }
-        if (folha && !$('col-conta').value.trim()) {
-          C.ui.toast('Informe a conta.', 'erro');
-          return;
-        }
         try {
           C.ui.loading(true);
           await C.api.rpc('salvar_colaborador', {
@@ -510,6 +540,14 @@ window.Campanha = window.Campanha || {};
       });
 
       $('lista-colaboradores').addEventListener('click', (ev) => {
+        const toggle = ev.target.closest('[data-col-menu]');
+        if (toggle) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          abrirMenuAcoes(toggle);
+          return;
+        }
+        if (ev.target.closest('.ent-menu-item')) fecharMenusAcoes();
         const btn = ev.target.closest('[data-col-acao]');
         if (!btn) return;
         if (btn.dataset.colAcao === 'pagar') abrirPagamento(btn.dataset.id);
