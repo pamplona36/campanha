@@ -2,7 +2,7 @@ window.Campanha = window.Campanha || {};
 
 (function (C) {
   const $ = (id) => C.utils.$(id);
-  const { esc, hojeISO, formatarData, formatarCpf, formatarTelefone, soDigitos, podeGestao, preencherSelect } = C.utils;
+  const { esc, hojeISO, formatarData, formatarCpf, formatarTelefone, soDigitos, podeGestao, preencherSelect, rotuloTipoColaborador } = C.utils;
 
   function opcoesMaterial() {
     return (C.state.cache.materiais || []).map((m) => ({
@@ -120,7 +120,11 @@ window.Campanha = window.Campanha || {};
   function htmlNomeColaborador(e, extraClass = '') {
     const col = colaboradorPorId(e.colaborador_id);
     const nome = e.colaborador_nome || col.nome || '—';
-    return `<div class="min-w-0 ${extraClass}"><p class="font-semibold text-slate-900">${esc(nome)}</p>${htmlTelefone(telefoneColaborador(e))}</div>`;
+    const tipo = rotuloTipoColaborador(e.colaborador_tipo || col.tipo);
+    const nomeHtml = tipo
+      ? `${esc(nome)} <span class="font-bold text-brand-800">${esc(tipo)}</span>`
+      : esc(nome);
+    return `<div class="min-w-0 ${extraClass}"><p class="font-semibold text-slate-900">${nomeHtml}</p>${htmlTelefone(telefoneColaborador(e))}</div>`;
   }
 
   function primeiroTexto(...vals) {
@@ -484,6 +488,7 @@ window.Campanha = window.Campanha || {};
         return C.utils.matchFiltro(
           filtroTexto,
           e.colaborador_nome,
+          rotuloTipoColaborador(e.colaborador_tipo || colaboradorPorId(e.colaborador_id).tipo),
           telefoneColaborador(e),
           formatarTelefone(telefoneColaborador(e)),
           e.quem_recebeu,

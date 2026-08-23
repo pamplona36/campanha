@@ -12,6 +12,7 @@
 -- Forma de pagamento e comprovante opcional: backend/sql/patch-pagamento-forma.sql
 -- Perfis admin / geral / motorista: backend/sql/patch-tipos-usuario.sql
 -- Tipo do colaborador (líder / agente / comércio): backend/sql/patch-colaborador-tipo.sql
+-- Tipo do colaborador no grid de entregas: backend/sql/patch-entrega-colaborador-tipo.sql
 -- =============================================================================
 -- Login inicial após executar:
 --   usuário: admin
@@ -1385,6 +1386,7 @@ BEGIN
         e.id,
         e.colaborador_id,
         c.nome AS colaborador_nome,
+        c.tipo AS colaborador_tipo,
         to_jsonb(c)->>'telefone' AS colaborador_telefone,
         c.endereco AS colaborador_endereco,
         c.numero AS colaborador_numero,
