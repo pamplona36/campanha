@@ -4,7 +4,11 @@ window.Campanha = window.Campanha || {};
   const $ = (id) => C.utils.$(id);
   const { esc, formatarData, formatarMoeda, formatarCpf, rotuloBanco } = C.utils;
 
-  let situacao = '';
+  function rotuloForma(forma) {
+    return ({ dinheiro: 'Dinheiro', deposito: 'Depósito', pix: 'PIX' })[forma] || '';
+  }
+
+  let situacao = 'pago';
 
   function inicioMesISO() {
     const d = new Date();
@@ -67,8 +71,8 @@ window.Campanha = window.Campanha || {};
     if (!lista.length) return '';
     return `<ul class="mt-2 space-y-1">${lista.map((p) => `
       <li class="flex items-center justify-between gap-2 text-sm text-slate-600">
-        <span>${formatarData(p.data_pagamento)} · ${esc(formatarMoeda(p.valor))}</span>
-        <button type="button" data-folha-ver="${esc(p.id)}" class="rounded-lg bg-sky-50 px-2 py-1 text-xs font-bold text-sky-800">Comprovante</button>
+        <span>${formatarData(p.data_pagamento)} · ${esc(formatarMoeda(p.valor))}${rotuloForma(p.forma) ? ` · ${esc(rotuloForma(p.forma))}` : ''}</span>
+        ${p.tem_comprovante ? `<button type="button" data-folha-ver="${esc(p.id)}" class="rounded-lg bg-sky-50 px-2 py-1 text-xs font-bold text-sky-800">Comprovante</button>` : ''}
       </li>
     `).join('')}</ul>`;
   }
@@ -114,7 +118,10 @@ window.Campanha = window.Campanha || {};
       linhas: itens.map((item) => {
         const pags = Array.isArray(item.pagamentos) ? item.pagamentos : [];
         const acoes = pags.length
-          ? pags.map((p) => `<button type="button" data-folha-ver="${esc(p.id)}" class="rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-800">Comprovante ${formatarData(p.data_pagamento)}</button>`).join('')
+          ? pags.map((p) => p.tem_comprovante
+            ? `<button type="button" data-folha-ver="${esc(p.id)}" class="rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-800">Comprovante ${formatarData(p.data_pagamento)}</button>`
+            : `<span class="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">${esc(rotuloForma(p.forma) || 'Pago')} ${formatarData(p.data_pagamento)}</span>`
+          ).join('')
           : '—';
         return `
           <tr>
@@ -221,6 +228,10 @@ window.Campanha = window.Campanha || {};
     },
 
     async carregar() {
+      if (!C.utils.podeFolha()) {
+        C.nav.irPara('entregas');
+        return;
+      }
       garantirPeriodo();
       pintarChips();
       await consultar({ loading: false });

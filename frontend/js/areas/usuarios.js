@@ -2,8 +2,35 @@ window.Campanha = window.Campanha || {};
 
 (function (C) {
   const $ = (id) => C.utils.$(id);
-  const { esc, matchFiltro } = C.utils;
+  const { esc, matchFiltro, rotuloTipo, tipoUsuario } = C.utils;
   let filtro = '';
+
+  function classeTipo(tipo) {
+    const t = tipoUsuario(tipo);
+    if (t === 'admin') return 'bg-gold-500/20 text-amber-800';
+    if (t === 'geral') return 'bg-brand-50 text-brand-800';
+    return 'bg-slate-100 text-slate-600';
+  }
+
+  function podeGerir(u) {
+    return tipoUsuario(u.tipo) !== 'admin' || C.utils.isAdmin();
+  }
+
+  function preencherTipos(valor, travar) {
+    const sel = $('usu-tipo');
+    const tipos = [
+      { id: 'motorista', nome: 'Motorista' },
+      { id: 'geral', nome: 'Geral' }
+    ];
+    if (C.utils.isAdmin()) tipos.push({ id: 'admin', nome: 'Administrador' });
+    const atual = tipoUsuario(valor) || 'motorista';
+    if (atual === 'admin' && !tipos.some((t) => t.id === 'admin')) {
+      tipos.push({ id: 'admin', nome: 'Administrador' });
+    }
+    sel.innerHTML = tipos.map((t) => `<option value="${esc(t.id)}">${esc(t.nome)}</option>`).join('');
+    sel.disabled = Boolean(travar);
+    C.utils.definirSelect(sel, atual);
+  }
 
   function resetForm() {
     $('form-usuario').reset();
@@ -11,7 +38,7 @@ window.Campanha = window.Campanha || {};
     $('usu-form-titulo').textContent = 'Novo usuário';
     $('usu-senha-hint').textContent = 'Mínimo de 6 caracteres.';
     $('usu-senha').required = true;
-    C.chosen.atualizar($('usu-tipo'));
+    preencherTipos('motorista', false);
   }
 
   function abrirNovo() {
@@ -21,7 +48,7 @@ window.Campanha = window.Campanha || {};
 
   function listaFiltrada() {
     const itens = C.state.cache.usuarios || [];
-    return itens.filter((u) => matchFiltro(filtro, u.nome, u.login, u.tipo === 'admin' ? 'administrador admin' : 'usuario'));
+    return itens.filter((u) => matchFiltro(filtro, u.nome, u.login, rotuloTipo(u.tipo), tipoUsuario(u.tipo)));
   }
 
   function render() {
@@ -40,11 +67,11 @@ window.Campanha = window.Campanha || {};
               <h4 class="text-base font-extrabold">${esc(u.nome)}</h4>
               <p class="text-sm text-slate-500">@${esc(u.login)}</p>
             </div>
-            <span class="rounded-full px-3 py-1 text-xs font-bold ${u.tipo === 'admin' ? 'bg-gold-500/20 text-amber-800' : 'bg-slate-100 text-slate-600'}">
-              ${u.tipo === 'admin' ? 'Admin' : 'Usuário'}
+            <span class="rounded-full px-3 py-1 text-xs font-bold ${classeTipo(u.tipo)}">
+              ${esc(rotuloTipo(u.tipo))}
             </span>
           </div>
-          ${C.ui.botoesCard(u.id, 'usuarios')}
+          ${podeGerir(u) ? C.ui.botoesCard(u.id, 'usuarios') : ''}
         </article>
       `).join(''),
       colunas: ['Nome', 'Login', 'Tipo', 'Ações'],
@@ -52,8 +79,8 @@ window.Campanha = window.Campanha || {};
         <tr>
           <td class="font-semibold text-slate-900">${esc(u.nome)}</td>
           <td>@${esc(u.login)}</td>
-          <td>${u.tipo === 'admin' ? 'Administrador' : 'Usuário'}</td>
-          <td>${C.ui.botoesLinha(u.id, 'usuarios')}</td>
+          <td>${esc(rotuloTipo(u.tipo))}</td>
+          <td class="ent-acoes">${podeGerir(u) ? C.ui.menuAcoesCrud(u.id, 'usuarios') : ''}</td>
         </tr>
       `)
     });
@@ -92,7 +119,8 @@ window.Campanha = window.Campanha || {};
 
                 <label class="mb-1 block text-sm font-semibold" for="usu-tipo">Tipo</label>
                 <select id="usu-tipo" class="field mb-4">
-                  <option value="usuario">Usuário</option>
+                  <option value="motorista">Motorista</option>
+                  <option value="geral">Geral</option>
                   <option value="admin">Administrador</option>
                 </select>
 
@@ -156,10 +184,14 @@ window.Campanha = window.Campanha || {};
     editar(id) {
       const u = C.state.cache.usuarios.find((x) => x.id === id);
       if (!u) return;
+      if (!podeGerir(u)) {
+        C.ui.toast('Somente o administrador pode alterar outro administrador.', 'erro');
+        return;
+      }
       $('usu-id').value = u.id;
       $('usu-nome').value = u.nome;
       $('usu-login').value = u.login;
-      C.utils.definirSelect($('usu-tipo'), u.tipo);
+      preencherTipos(u.tipo, u.id === C.state.usuario?.id);
       $('usu-senha').value = '';
       $('usu-senha').required = false;
       $('usu-form-titulo').textContent = 'Editar usuário';
@@ -168,6 +200,11 @@ window.Campanha = window.Campanha || {};
     },
 
     excluir(id) {
+      const u = C.state.cache.usuarios.find((x) => x.id === id);
+      if (u && !podeGerir(u)) {
+        C.ui.toast('Somente o administrador pode excluir outro administrador.', 'erro');
+        return;
+      }
       return C.api.excluir('excluir_usuario', id, () => C.areas.usuarios.carregar());
     }
   };

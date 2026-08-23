@@ -35,7 +35,7 @@ window.Campanha = window.Campanha || {};
       linhas: itens.map((t) => `
         <tr>
           <td class="font-semibold text-slate-900">${esc(t.nome)}</td>
-          <td>${C.ui.botoesLinha(t.id, 'tipos')}</td>
+          <td class="ent-acoes">${C.ui.menuAcoesCrud(t.id, 'tipos')}</td>
         </tr>
       `)
     });

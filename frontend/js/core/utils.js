@@ -85,8 +85,45 @@ Campanha.utils = {
     return raw.replace(/^ERROR:\s*/i, '').replace(/^\s*P0001:\s*/i, '').trim();
   },
 
+  tipoUsuario(tipo) {
+    const t = String(tipo ?? Campanha.state.usuario?.tipo ?? '').toLowerCase();
+    if (t === 'usuario') return 'motorista';
+    return t;
+  },
+
   isAdmin() {
-    return Campanha.state.usuario?.tipo === 'admin';
+    return Campanha.utils.tipoUsuario() === 'admin';
+  },
+
+  isGeral() {
+    return Campanha.utils.tipoUsuario() === 'geral';
+  },
+
+  isMotorista() {
+    return Campanha.utils.tipoUsuario() === 'motorista';
+  },
+
+  podeGestao() {
+    return Campanha.utils.isAdmin() || Campanha.utils.isGeral();
+  },
+
+  podeFolha() {
+    return Campanha.utils.isAdmin();
+  },
+
+  podeAcessar(view) {
+    if (view === 'entregas') return true;
+    if (view === 'folha') return Campanha.utils.podeFolha();
+    return Campanha.utils.podeGestao();
+  },
+
+  rotuloTipo(tipo) {
+    const mapa = {
+      admin: 'Administrador',
+      geral: 'Geral',
+      motorista: 'Motorista'
+    };
+    return mapa[Campanha.utils.tipoUsuario(tipo)] || 'Motorista';
   },
 
   preencherSelect(el, items, { value, label, placeholder } = {}) {

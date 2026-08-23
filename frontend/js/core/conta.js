@@ -4,7 +4,7 @@ window.Campanha = window.Campanha || {};
   const $ = (id) => C.utils.$(id);
 
   function papel() {
-    return C.utils.isAdmin() ? 'Administrador' : 'Equipe';
+    return C.utils.rotuloTipo();
   }
 
   function fechar() {

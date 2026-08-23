@@ -9,6 +9,18 @@ window.Campanha = window.Campanha || {};
   let pagamentoColab = null;
   let comprovanteAtual = '';
   let ocrTexto = '';
+  let formaPagamento = 'pix';
+
+  function rotuloForma(forma) {
+    return ({ dinheiro: 'Dinheiro', deposito: 'Depósito', pix: 'PIX' })[forma] || '';
+  }
+
+  function definirForma(forma) {
+    formaPagamento = ['dinheiro', 'deposito', 'pix'].includes(forma) ? forma : 'pix';
+    document.querySelectorAll('[data-pag-forma]').forEach((btn) => {
+      btn.classList.toggle('is-on', btn.dataset.pagForma === formaPagamento);
+    });
+  }
 
   function setFolha(on) {
     folha = Boolean(on);
@@ -82,53 +94,20 @@ window.Campanha = window.Campanha || {};
     `;
   }
 
-  function fecharMenusAcoes() {
-    document.querySelectorAll('#lista-colaboradores .ent-menu.is-open').forEach((menu) => {
-      menu.classList.remove('is-open', 'is-up');
-      const btn = menu.querySelector('[data-col-menu]');
-      const lista = menu.querySelector('.ent-menu-lista');
-      if (btn) btn.setAttribute('aria-expanded', 'false');
-      if (lista) lista.hidden = true;
-    });
-  }
-
-  function abrirMenuAcoes(btn) {
-    const wrap = btn.closest('.ent-menu');
-    const lista = wrap?.querySelector('.ent-menu-lista');
-    if (!wrap || !lista) return;
-    const jaAberto = wrap.classList.contains('is-open');
-    fecharMenusAcoes();
-    if (jaAberto) return;
-    wrap.classList.add('is-open');
-    btn.setAttribute('aria-expanded', 'true');
-    lista.hidden = false;
-    const rect = btn.getBoundingClientRect();
-    const altura = lista.offsetHeight || 120;
-    if (rect.bottom + altura + 12 > window.innerHeight && rect.top > altura) {
-      wrap.classList.add('is-up');
-    }
-  }
-
   function menuAcoesGrid(c) {
-    const pagar = c.folha
-      ? `<button type="button" role="menuitem" class="ent-menu-item" data-col-acao="pagar" data-id="${esc(c.id)}">Pagamento</button>`
-      : `<span class="ent-menu-item is-off">Pagamento</span>`;
-    return `
-      <div class="ent-menu">
-        <button type="button" class="ent-menu-btn" data-col-menu="${esc(c.id)}" aria-haspopup="true" aria-expanded="false">
-          Ações
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
-        </button>
-        <div class="ent-menu-lista" role="menu" hidden>
-          <button type="button" role="menuitem" class="ent-menu-item" data-edit="colaboradores" data-id="${esc(c.id)}">Editar</button>
-          ${pagar}
-        </div>
-      </div>
-    `;
+    const pagar = C.utils.podeFolha()
+      ? (c.folha
+        ? C.ui.itemMenu({ rotulo: 'Pagamento', icone: 'pagamento', attrs: `data-col-acao="pagar" data-id="${esc(c.id)}"` })
+        : C.ui.itemMenu({ rotulo: 'Pagamento', icone: 'pagamento', desativado: true }))
+      : '';
+    return C.ui.menuAcoes(c.id, [
+      C.ui.itemMenu({ rotulo: 'Editar', icone: 'editar', attrs: `data-edit="colaboradores" data-id="${esc(c.id)}"` }),
+      pagar
+    ].join(''));
   }
 
   function botoesColaborador(c) {
-    const pagar = c.folha
+    const pagar = C.utils.podeFolha() && c.folha
       ? `<button type="button" data-col-acao="pagar" data-id="${esc(c.id)}" class="min-h-[44px] flex-1 rounded-xl bg-emerald-50 text-sm font-bold text-emerald-800">Pagamento</button>`
       : '';
     return `
@@ -216,6 +195,7 @@ window.Campanha = window.Campanha || {};
     if ($('pag-valor') && pagamentoColab) {
       $('pag-valor').value = pagamentoColab.valor_mensal ?? '';
     }
+    definirForma('pix');
   }
 
   function renderHistorico(lista) {
@@ -229,10 +209,10 @@ window.Campanha = window.Campanha || {};
       <li class="flex items-center justify-between gap-2 rounded-2xl bg-slate-50 px-3 py-2">
         <span>
           <strong class="block text-sm text-slate-800">${esc(formatarMoeda(p.valor))}</strong>
-          <span class="text-xs text-slate-500">${formatarData(p.data_pagamento)} · ${esc(p.usuario_nome || '')}</span>
+          <span class="text-xs text-slate-500">${formatarData(p.data_pagamento)}${rotuloForma(p.forma) ? ` · ${esc(rotuloForma(p.forma))}` : ''} · ${esc(p.usuario_nome || '')}</span>
         </span>
         <span class="flex shrink-0 gap-2">
-          <button type="button" data-pag-ver="${esc(p.id)}" class="rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-800">Ver</button>
+          ${p.tem_comprovante ? `<button type="button" data-pag-ver="${esc(p.id)}" class="rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-800">Ver</button>` : ''}
           <button type="button" data-pag-del="${esc(p.id)}" class="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700">Excluir</button>
         </span>
       </li>
@@ -247,6 +227,10 @@ window.Campanha = window.Campanha || {};
 
   async function abrirPagamento(id) {
     const c = (C.state.cache.colaboradores || []).find((x) => x.id === id);
+    if (!C.utils.podeFolha()) {
+      C.ui.toast('Somente o administrador pode registrar pagamento.', 'erro');
+      return;
+    }
     if (!c || !c.folha) {
       C.ui.toast('Pagamento só está disponível para quem está na folha.', 'erro');
       return;
@@ -407,7 +391,14 @@ window.Campanha = window.Campanha || {};
                 <input type="hidden" id="pag-colaborador-id" />
                 <p id="pag-resumo" class="mb-3 text-sm text-slate-600"></p>
 
-                <p class="mb-2 text-sm font-extrabold text-slate-800">Comprovante</p>
+                <p class="mb-2 text-sm font-semibold text-slate-800">Forma de pagamento</p>
+                <div id="pag-forma-grupo" class="mb-4 grid grid-cols-3 gap-2">
+                  <button type="button" data-pag-forma="dinheiro" class="pag-forma-btn">Dinheiro</button>
+                  <button type="button" data-pag-forma="deposito" class="pag-forma-btn">Depósito</button>
+                  <button type="button" data-pag-forma="pix" class="pag-forma-btn is-on">PIX</button>
+                </div>
+
+                <p class="mb-1 text-sm font-extrabold text-slate-800">Comprovante <span class="font-medium text-slate-400">(opcional)</span></p>
                 <div class="mb-3 grid grid-cols-2 gap-2">
                   <button type="button" id="pag-camera" class="min-h-[52px] rounded-2xl bg-brand-800 text-sm font-bold text-white">
                     Tirar foto
@@ -423,7 +414,7 @@ window.Campanha = window.Campanha || {};
                   <img id="pag-preview" alt="Comprovante" class="max-h-56 w-full object-contain" />
                 </div>
 
-                <label class="mb-1 block text-sm font-semibold" for="pag-data">Data do comprovante</label>
+                <label class="mb-1 block text-sm font-semibold" for="pag-data">Data do pagamento</label>
                 <input id="pag-data" type="date" class="field mb-3" required />
 
                 <label class="mb-1 block text-sm font-semibold" for="pag-valor">Valor (R$)</label>
@@ -522,6 +513,10 @@ window.Campanha = window.Campanha || {};
         }
       });
 
+      $('pag-forma-grupo').addEventListener('click', (ev) => {
+        const btn = ev.target.closest('[data-pag-forma]');
+        if (btn) definirForma(btn.dataset.pagForma);
+      });
       $('pag-camera').addEventListener('click', () => $('pag-foto').click());
       $('pag-galeria').addEventListener('click', () => $('pag-arquivo').click());
       $('pag-foto').addEventListener('change', (ev) => {
@@ -540,14 +535,6 @@ window.Campanha = window.Campanha || {};
       });
 
       $('lista-colaboradores').addEventListener('click', (ev) => {
-        const toggle = ev.target.closest('[data-col-menu]');
-        if (toggle) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          abrirMenuAcoes(toggle);
-          return;
-        }
-        if (ev.target.closest('.ent-menu-item')) fecharMenusAcoes();
         const btn = ev.target.closest('[data-col-acao]');
         if (!btn) return;
         if (btn.dataset.colAcao === 'pagar') abrirPagamento(btn.dataset.id);
@@ -566,8 +553,8 @@ window.Campanha = window.Campanha || {};
           C.ui.toast('Informe o valor do pagamento.', 'erro');
           return;
         }
-        if (!comprovanteAtual) {
-          C.ui.toast('Anexe a foto do comprovante.', 'erro');
+        if (!['dinheiro', 'deposito', 'pix'].includes(formaPagamento)) {
+          C.ui.toast('Informe a forma de pagamento.', 'erro');
           return;
         }
         try {
@@ -576,7 +563,8 @@ window.Campanha = window.Campanha || {};
             p_colaborador_id: colaboradorId,
             p_data_pagamento: data,
             p_valor: valor,
-            p_comprovante: comprovanteAtual,
+            p_forma: formaPagamento,
+            p_comprovante: comprovanteAtual || null,
             p_ocr_texto: ocrTexto || null
           });
           C.ui.toast('Pagamento registrado.');
@@ -603,8 +591,12 @@ window.Campanha = window.Campanha || {};
           try {
             C.ui.loading(true);
             const pag = await C.api.rpc('obter_pagamento_folha', { p_id: ver.dataset.pagVer });
-            $('pag-ver-titulo').textContent = `Comprovante · ${formatarData(pag.data_pagamento)}`;
-            $('pag-ver-img').src = pag.comprovante || '';
+            if (!pag.comprovante) {
+              C.ui.toast('Este pagamento não tem comprovante.', 'info');
+              return;
+            }
+            $('pag-ver-titulo').textContent = `Comprovante · ${formatarData(pag.data_pagamento)}${rotuloForma(pag.forma) ? ` · ${rotuloForma(pag.forma)}` : ''}`;
+            $('pag-ver-img').src = pag.comprovante;
             C.ui.abrirModal('modal-ver-comprovante');
           } catch (err) {
             C.ui.toast(C.utils.msgErro(err), 'erro');

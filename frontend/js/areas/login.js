@@ -48,7 +48,7 @@ window.Campanha = window.Campanha || {};
               </div>
 
               <button type="submit" id="btn-entrar" class="btn-primary w-full">Entrar</button>
-              <button type="button" data-instalar-app class="mt-3 hidden min-h-[52px] w-full rounded-2xl bg-brand-50 font-bold text-brand-800">
+              <button type="button" data-instalar-app class="instalar-app-btn instalar-app-btn-login" hidden>
                 Instalar no celular
               </button>
             </form>

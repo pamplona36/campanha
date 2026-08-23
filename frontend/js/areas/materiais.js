@@ -38,7 +38,7 @@ window.Campanha = window.Campanha || {};
         <tr>
           <td class="font-semibold text-slate-900">${esc(m.nome)}</td>
           <td>${esc(m.tipo)}</td>
-          <td>${C.ui.botoesLinha(m.id, 'materiais')}</td>
+          <td class="ent-acoes">${C.ui.menuAcoesCrud(m.id, 'materiais')}</td>
         </tr>
       `)
     });

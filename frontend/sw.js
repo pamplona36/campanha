@@ -1,4 +1,4 @@
-const CACHE = 'campanha-pwa-v1';
+const CACHE = 'campanha-pwa-v2';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting());

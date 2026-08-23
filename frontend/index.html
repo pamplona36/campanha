@@ -47,7 +47,7 @@
   </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chosen/1.8.7/chosen.min.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/2.1.4/toastr.min.css" />
-  <link rel="stylesheet" href="css/styles.css?v=7" />
+  <link rel="stylesheet" href="css/styles.css?v=10" />
 </head>
 <body class="bg-slate-100 text-slate-800 antialiased">
 
@@ -79,7 +79,7 @@
             </div>
           </div>
           <div class="flex shrink-0 items-center gap-2">
-            <button type="button" data-instalar-app class="hidden h-11 rounded-2xl bg-white/10 px-3 text-xs font-bold lg:hidden" aria-label="Instalar no celular">
+            <button type="button" data-instalar-app class="instalar-app-btn" hidden aria-label="Instalar no celular">
               Instalar
             </button>
             <div class="user-menu">
@@ -215,6 +215,20 @@
     </div>
   </div>
 
+  <div id="pwa-android-ajuda" class="fixed inset-0 z-[70] hidden items-center justify-center p-6">
+    <div class="absolute inset-0 bg-black/40" data-close-ios-pwa></div>
+    <div class="relative w-full max-w-sm rounded-3xl bg-white p-5 shadow-card">
+      <p class="text-base font-extrabold text-slate-800">Instalar no celular</p>
+      <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-600">
+        <li>Abra este site no <strong>Chrome</strong>.</li>
+        <li>Toque no menu <strong>⋮</strong> no canto superior.</li>
+        <li>Escolha <strong>Instalar aplicativo</strong> ou <strong>Adicionar à tela inicial</strong>.</li>
+        <li>Confirme em <strong>Instalar</strong>.</li>
+      </ol>
+      <button type="button" data-close-ios-pwa class="btn-primary mt-5 w-full">Entendi</button>
+    </div>
+  </div>
+
   <div id="loading" class="fixed inset-0 z-[80] hidden items-center justify-center bg-brand-950/40">
     <div class="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 shadow-card">
       <span class="h-5 w-5 animate-spin rounded-full border-2 border-brand-800 border-t-transparent"></span>
@@ -231,25 +245,25 @@
   <script src="js/config.js"></script>
   <script src="js/core/state.js"></script>
   <script src="js/core/supabase.js"></script>
-  <script src="js/core/utils.js?v=4"></script>
-  <script src="js/core/ui.js?v=2"></script>
+  <script src="js/core/utils.js?v=5"></script>
+  <script src="js/core/ui.js?v=3"></script>
   <script src="js/core/chosen.js"></script>
   <script src="js/core/bancos.js"></script>
   <script src="js/core/api.js"></script>
   <script src="js/core/auth.js"></script>
-  <script src="js/core/nav.js?v=5"></script>
-  <script src="js/core/conta.js?v=1"></script>
-  <script src="js/core/pwa.js"></script>
+  <script src="js/core/nav.js?v=8"></script>
+  <script src="js/core/conta.js?v=2"></script>
+  <script src="js/core/pwa.js?v=2"></script>
   <script src="js/core/ocr.js?v=1"></script>
   <script src="js/core/localidades.js?v=1"></script>
-  <script src="js/areas/login.js"></script>
-  <script src="js/areas/entregas.js?v=19"></script>
+  <script src="js/areas/login.js?v=1"></script>
+  <script src="js/areas/entregas.js?v=21"></script>
   <script src="js/areas/relatorios.js?v=2"></script>
-  <script src="js/areas/folha.js?v=1"></script>
-  <script src="js/areas/usuarios.js"></script>
-  <script src="js/areas/colaboradores.js?v=9"></script>
-  <script src="js/areas/materiais.js"></script>
-  <script src="js/areas/tipos.js"></script>
+  <script src="js/areas/folha.js?v=4"></script>
+  <script src="js/areas/usuarios.js?v=2"></script>
+  <script src="js/areas/colaboradores.js?v=12"></script>
+  <script src="js/areas/materiais.js?v=1"></script>
+  <script src="js/areas/tipos.js?v=1"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

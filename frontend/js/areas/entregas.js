@@ -2,7 +2,7 @@ window.Campanha = window.Campanha || {};
 
 (function (C) {
   const $ = (id) => C.utils.$(id);
-  const { esc, hojeISO, formatarData, formatarCpf, formatarTelefone, soDigitos, isAdmin, preencherSelect } = C.utils;
+  const { esc, hojeISO, formatarData, formatarCpf, formatarTelefone, soDigitos, podeGestao, preencherSelect } = C.utils;
 
   function opcoesMaterial() {
     return (C.state.cache.materiais || []).map((m) => ({
@@ -289,79 +289,32 @@ window.Campanha = window.Campanha || {};
     const cls = compacto
       ? 'rounded-lg px-3 py-1.5 text-xs font-bold'
       : 'min-h-[44px] flex-1 rounded-xl text-sm font-bold';
-    const confirmar = !isAdmin() && podeAlterarStatus(e) && status !== 'entregue'
+    const confirmar = !podeGestao() && podeAlterarStatus(e) && status !== 'entregue'
       ? `<button type="button" data-ent-acao="entregue" data-id="${esc(e.id)}" class="${cls} bg-emerald-50 text-emerald-800">Confirmar entrega</button>`
       : '';
-    const reagendar = !isAdmin() && podeAlterarStatus(e) && status !== 'entregue'
+    const reagendar = !podeGestao() && podeAlterarStatus(e) && status !== 'entregue'
       ? `<button type="button" data-ent-acao="reagendado" data-id="${esc(e.id)}" class="${cls} bg-violet-50 text-violet-800">Reagendar</button>`
       : '';
-    const del = isAdmin()
+    const del = podeGestao()
       ? `<button type="button" data-del="entregas" data-id="${esc(e.id)}" class="mt-3 min-h-[44px] w-full rounded-xl bg-red-50 text-sm font-bold text-red-700">Excluir</button>`
       : '';
     const principais = `${botoesEditar(e, false)}${botoesVisualizar(e, false)}${botaoMaps(e, false)}${confirmar}${reagendar}`;
     return `${principais ? `<div class="mt-3 flex gap-2">${principais}</div>` : ''}${del}`;
   }
 
-  function itemMenu(rotulo, attrs, { perigo = false, desativado = false } = {}) {
-    if (desativado) {
-      return `<span class="ent-menu-item is-off">${esc(rotulo)}</span>`;
-    }
-    return `<button type="button" role="menuitem" class="ent-menu-item${perigo ? ' is-danger' : ''}" ${attrs}>${esc(rotulo)}</button>`;
-  }
-
   function menuAcoesGrid(e) {
     const maps = urlMaps(e);
     const editar = podeEditar(e)
-      ? itemMenu('Editar', `data-edit="entregas" data-id="${esc(e.id)}"`)
-      : itemMenu('Editar', '', { desativado: true });
-    const visualizar = itemMenu('Visualizar', `data-ent-acao="ver" data-id="${esc(e.id)}"`);
+      ? C.ui.itemMenu({ rotulo: 'Editar', icone: 'editar', attrs: `data-edit="entregas" data-id="${esc(e.id)}"` })
+      : C.ui.itemMenu({ rotulo: 'Editar', icone: 'editar', desativado: true });
+    const visualizar = C.ui.itemMenu({ rotulo: 'Visualizar', icone: 'visualizar', attrs: `data-ent-acao="ver" data-id="${esc(e.id)}"` });
     const mapa = maps
-      ? itemMenu('Mapa', `data-ent-acao="mapa" data-id="${esc(e.id)}"`)
-      : itemMenu('Mapa', '', { desativado: true });
-    const excluir = isAdmin()
-      ? itemMenu('Excluir', `data-del="entregas" data-id="${esc(e.id)}"`, { perigo: true })
-      : itemMenu('Excluir', '', { desativado: true });
-    return `
-      <div class="ent-menu">
-        <button type="button" class="ent-menu-btn" data-ent-menu="${esc(e.id)}" aria-haspopup="true" aria-expanded="false">
-          Ações
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
-        </button>
-        <div class="ent-menu-lista" role="menu" hidden>
-          ${editar}
-          ${visualizar}
-          ${mapa}
-          ${excluir}
-        </div>
-      </div>
-    `;
-  }
-
-  function fecharMenusAcoes() {
-    document.querySelectorAll('.ent-menu.is-open').forEach((menu) => {
-      menu.classList.remove('is-open', 'is-up');
-      const btn = menu.querySelector('[data-ent-menu]');
-      const lista = menu.querySelector('.ent-menu-lista');
-      if (btn) btn.setAttribute('aria-expanded', 'false');
-      if (lista) lista.hidden = true;
-    });
-  }
-
-  function abrirMenuAcoes(btn) {
-    const wrap = btn.closest('.ent-menu');
-    const lista = wrap?.querySelector('.ent-menu-lista');
-    if (!wrap || !lista) return;
-    const jaAberto = wrap.classList.contains('is-open');
-    fecharMenusAcoes();
-    if (jaAberto) return;
-    wrap.classList.add('is-open');
-    btn.setAttribute('aria-expanded', 'true');
-    lista.hidden = false;
-    const rect = btn.getBoundingClientRect();
-    const altura = lista.offsetHeight || 180;
-    if (rect.bottom + altura + 12 > window.innerHeight && rect.top > altura) {
-      wrap.classList.add('is-up');
-    }
+      ? C.ui.itemMenu({ rotulo: 'Mapa', icone: 'mapa', attrs: `data-ent-acao="mapa" data-id="${esc(e.id)}"` })
+      : C.ui.itemMenu({ rotulo: 'Mapa', icone: 'mapa', desativado: true });
+    const excluir = podeGestao()
+      ? C.ui.itemMenu({ rotulo: 'Excluir', icone: 'excluir', attrs: `data-del="entregas" data-id="${esc(e.id)}"`, perigo: true })
+      : C.ui.itemMenu({ rotulo: 'Excluir', icone: 'excluir', desativado: true });
+    return C.ui.menuAcoes(e.id, `${editar}${visualizar}${mapa}${excluir}`);
   }
 
   function linhaDado(rotulo, valor) {
@@ -466,7 +419,7 @@ window.Campanha = window.Campanha || {};
   }
 
   function aplicarCamposAdmin() {
-    const admin = isAdmin();
+    const admin = podeGestao();
     document.querySelectorAll('#modal-entrega .ent-admin-only').forEach((el) => {
       el.classList.toggle('hidden', !admin);
     });
@@ -497,7 +450,7 @@ window.Campanha = window.Campanha || {};
 
   function controleStatus(e) {
     const status = statusEntrega(e);
-    if (isAdmin() && podeAlterarStatus(e)) {
+    if (podeGestao() && podeAlterarStatus(e)) {
       return `<select class="field no-chosen ent-status-sel ${C.utils.classeStatus(status)}" data-id="${esc(e.id)}" aria-label="Status da entrega">${opcoesStatusHtml(status)}</select>`;
     }
     return badgeStatus(status);
@@ -590,7 +543,7 @@ window.Campanha = window.Campanha || {};
             <p>Entregue por: <strong class="text-slate-800">${esc(nomesEntregadores(e))}</strong></p>
             <p>${formatarData(e.data_entrega)}${e.bairro || e.colaborador_bairro ? ` · ${esc(e.bairro || e.colaborador_bairro)}` : ''}${e.cidade || e.colaborador_cidade ? `/${esc(e.cidade || e.colaborador_cidade)}` : ''}</p>
           </div>
-          ${isAdmin() && podeAlterarStatus(e) ? `<div class="mt-3">${controleStatus(e)}</div>` : ''}
+          ${podeGestao() && podeAlterarStatus(e) ? `<div class="mt-3">${controleStatus(e)}</div>` : ''}
           ${acoesEntrega(e, false)}
         </article>
       `;
@@ -792,13 +745,13 @@ window.Campanha = window.Campanha || {};
         const colaboradorId = $('ent-colaborador').value;
         const recebeu = $('ent-recebeu').value.trim();
         const observacoes = ($('ent-obs')?.value || '').trim();
-        const entregadores = isAdmin()
+        const entregadores = podeGestao()
           ? C.utils.valoresSelect($('ent-entregadores'))
           : (C.state.usuario?.id ? [C.state.usuario.id] : []);
         const data = $('ent-data').value;
         const itens = coletarItens();
         if (!colaboradorId || !entregadores.length) {
-          C.ui.toast(isAdmin() ? 'Preencha colaborador e quem entregou.' : 'Selecione o colaborador.', 'erro');
+          C.ui.toast(podeGestao() ? 'Preencha colaborador e quem entregou.' : 'Selecione o colaborador.', 'erro');
           return;
         }
         if (!itens.length || itens.some((i) => !i.material_id || !i.quantidade)) {
@@ -828,7 +781,7 @@ window.Campanha = window.Campanha || {};
             p_data_entrega: data,
             p_entregadores: entregadores,
             p_itens: itens,
-            p_status: isAdmin() ? ($('ent-status').value || 'novo') : 'novo',
+            p_status: podeGestao() ? ($('ent-status').value || 'novo') : 'novo',
             p_usa_endereco_colaborador: usaColab,
             p_endereco: usaColab ? null : enderecoNovo.endereco,
             p_numero: usaColab ? null : enderecoNovo.numero,
@@ -849,14 +802,6 @@ window.Campanha = window.Campanha || {};
       });
 
       $('lista-entregas').addEventListener('click', async (ev) => {
-        const toggle = ev.target.closest('[data-ent-menu]');
-        if (toggle) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          abrirMenuAcoes(toggle);
-          return;
-        }
-        if (ev.target.closest('.ent-menu-item')) setTimeout(fecharMenusAcoes, 0);
         const btn = ev.target.closest('[data-ent-acao]');
         if (!btn) return;
         const id = btn.dataset.id;
@@ -947,16 +892,10 @@ window.Campanha = window.Campanha || {};
         render();
       });
 
-      document.addEventListener('click', (ev) => {
-        if (!ev.target.closest('.ent-menu')) fecharMenusAcoes();
-      });
-      document.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Escape') fecharMenusAcoes();
-      });
     },
 
     async carregar() {
-      const admin = isAdmin();
+      const admin = podeGestao();
       $('titulo-view').textContent = 'Entregas';
       const sub = $('subtitulo-view');
       if (sub) {
@@ -1017,8 +956,8 @@ window.Campanha = window.Campanha || {};
     },
 
     excluir(id) {
-      if (!isAdmin()) {
-        C.ui.toast('Somente o administrador pode excluir entregas.', 'erro');
+      if (!podeGestao()) {
+        C.ui.toast('Somente administrador ou usuário geral pode excluir entregas.', 'erro');
         return;
       }
       return C.api.excluir('excluir_entrega', id, () => C.areas.entregas.carregar());

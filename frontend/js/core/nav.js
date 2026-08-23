@@ -59,12 +59,12 @@ window.Campanha = window.Campanha || {};
   const ORDEM = ['entregas', 'relatorios', 'folha', 'usuarios', 'colaboradores', 'materiais', 'tipos'];
 
   function menu() {
-    const admin = C.utils.isAdmin();
+    const gestao = C.utils.podeGestao();
+    const folha = C.utils.podeFolha();
     const operacao = [{ id: 'entregas', label: 'Entregas', svg: iconBox() }];
-    if (admin) {
-      operacao.push({ id: 'relatorios', label: 'Relatórios', svg: iconChart() });
-    }
-    const cadastros = admin
+    if (gestao) operacao.push({ id: 'relatorios', label: 'Relatórios', svg: iconChart() });
+    if (folha) operacao.push({ id: 'folha', label: 'Folha de pagamento', svg: iconMoney() });
+    const cadastros = gestao
       ? [
           { id: 'usuarios', label: 'Usuários', svg: iconUsers() },
           { id: 'colaboradores', label: 'Colaboradores', svg: iconPin() },
@@ -72,7 +72,7 @@ window.Campanha = window.Campanha || {};
           { id: 'tipos', label: 'Tipos', svg: iconTag() }
         ]
       : [];
-    return { admin, operacao, cadastros };
+    return { gestao, folha, operacao, cadastros };
   }
 
   function btnLateral(item) {
@@ -87,16 +87,13 @@ window.Campanha = window.Campanha || {};
 
   C.nav = {
     montar() {
-      const { admin, operacao, cadastros } = menu();
+      const { gestao, folha, operacao, cadastros } = menu();
       const ativoCad = CADASTROS.includes(C.state.view);
 
-      const mobile = admin
-        ? [
-            { id: 'entregas', label: 'Entrega', svg: iconBox() },
-            { id: 'relatorios', label: 'Relatórios', svg: iconChart() },
-            { id: 'cadastros', label: 'Cadastros', svg: iconGrid() }
-          ]
-        : [{ id: 'entregas', label: 'Entrega', svg: iconBox() }];
+      const mobile = [{ id: 'entregas', label: 'Entrega', svg: iconBox() }];
+      if (gestao) mobile.push({ id: 'relatorios', label: 'Relatórios', svg: iconChart() });
+      if (folha) mobile.push({ id: 'folha', label: 'Folha', svg: iconMoney() });
+      if (gestao) mobile.push({ id: 'cadastros', label: 'Cadastros', svg: iconGrid() });
 
       $('nav-itens').innerHTML = mobile.map((item) => {
         const ativo = C.state.view === item.id || (item.id === 'cadastros' && ativoCad);
@@ -128,6 +125,7 @@ window.Campanha = window.Campanha || {};
     mostrarLogin() {
       $('tela-app').classList.add('hidden');
       $('tela-login').classList.remove('hidden');
+      if (C.pwa) C.pwa.atualizar();
     },
 
     mostrarApp() {
@@ -136,13 +134,14 @@ window.Campanha = window.Campanha || {};
       const sideVer = $('sidebar-versao');
       if (sideVer) sideVer.textContent = C.rotuloVersao ? C.rotuloVersao() : '';
       if (C.conta) C.conta.atualizar();
+      if (C.pwa) C.pwa.atualizar();
       C.nav.montar();
       aplicarMenuLateral();
       C.nav.irPara('entregas');
     },
 
     irPara(view) {
-      if (!C.utils.isAdmin() && view !== 'entregas') view = 'entregas';
+      if (!C.utils.podeAcessar(view)) view = 'entregas';
       C.state.view = view;
       const area = C.areas[view];
       $('titulo-view').textContent = area?.titulo || 'Campanha';

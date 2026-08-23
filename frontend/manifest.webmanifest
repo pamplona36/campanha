@@ -3,8 +3,8 @@
   "name": "Campanha · Materiais",
   "short_name": "Campanha",
   "description": "Controle de entrega de materiais de campanha",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#061c45",
@@ -21,7 +21,13 @@
       "src": "icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

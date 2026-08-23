@@ -13,82 +13,93 @@ window.Campanha = window.Campanha || {};
   }
 
   function ehIOS() {
-    return /iphone|ipad|ipod/i.test(navigator.userAgent || '');
-  }
-
-  function ehMobile() {
-    return window.matchMedia('(max-width: 1023px)').matches
-      || /android|iphone|ipad|ipod/i.test(navigator.userAgent || '');
+    const ua = navigator.userAgent || '';
+    return /iphone|ipad|ipod/i.test(ua)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   }
 
   function mostrarBotoes(on) {
     document.querySelectorAll('[data-instalar-app]').forEach((el) => {
-      el.classList.toggle('hidden', !on);
+      el.classList.toggle('is-on', on);
+      el.hidden = !on;
     });
   }
 
   function atualizarVisibilidade() {
-    if (jaInstalado()) {
-      mostrarBotoes(false);
+    mostrarBotoes(!jaInstalado());
+  }
+
+  function fecharAjuda() {
+    ['pwa-ios-ajuda', 'pwa-android-ajuda'].forEach((id) => {
+      const box = $(id);
+      if (!box) return;
+      box.classList.add('hidden');
+      box.classList.remove('flex');
+    });
+  }
+
+  function abrirAjuda() {
+    const id = ehIOS() ? 'pwa-ios-ajuda' : 'pwa-android-ajuda';
+    const box = $(id);
+    if (!box) {
+      if (C.ui) C.ui.toast('No navegador, abra o menu e toque em Instalar aplicativo.', 'info');
       return;
     }
-    mostrarBotoes(ehMobile() || Boolean(deferred));
+    fecharAjuda();
+    box.classList.remove('hidden');
+    box.classList.add('flex');
+  }
+
+  window.addEventListener('beforeinstallprompt', (ev) => {
+    ev.preventDefault();
+    deferred = ev;
+    atualizarVisibilidade();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferred = null;
+    mostrarBotoes(false);
+    if (C.ui) C.ui.toast('Aplicativo instalado no dispositivo.');
+  });
+
+  if ('serviceWorker' in navigator) {
+    const sw = new URL('sw.js', document.baseURI);
+    navigator.serviceWorker.register(sw.href).catch(() => {});
   }
 
   C.pwa = {
+    atualizar: atualizarVisibilidade,
+
     init() {
-      window.addEventListener('beforeinstallprompt', (ev) => {
-        ev.preventDefault();
-        deferred = ev;
-        atualizarVisibilidade();
-      });
-      window.addEventListener('appinstalled', () => {
-        deferred = null;
-        mostrarBotoes(false);
-        C.ui.toast('Aplicativo instalado no dispositivo.');
-      });
-
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
-      }
-
       document.addEventListener('click', (ev) => {
         if (ev.target.closest('[data-instalar-app]')) {
+          ev.preventDefault();
           C.pwa.instalar();
           return;
         }
-        if (ev.target.closest('[data-close-ios-pwa]')) {
-          const box = $('pwa-ios-ajuda');
-          if (!box) return;
-          box.classList.add('hidden');
-          box.classList.remove('flex');
-        }
+        if (ev.target.closest('[data-close-ios-pwa]')) fecharAjuda();
       });
-
       atualizarVisibilidade();
     },
 
     async instalar() {
       if (jaInstalado()) {
-        C.ui.toast('O aplicativo já está instalado.', 'info');
+        if (C.ui) C.ui.toast('O aplicativo já está instalado.', 'info');
         return;
       }
       if (deferred) {
-        deferred.prompt();
-        const escolha = await deferred.userChoice;
-        if (escolha.outcome !== 'accepted') {
-          C.ui.toast('Instalação cancelada.', 'info');
+        const ev = deferred;
+        try {
+          ev.prompt();
+          await ev.userChoice;
+        } catch (_) {
+          abrirAjuda();
         }
         deferred = null;
         atualizarVisibilidade();
         return;
       }
-      if (ehIOS()) {
-        $('pwa-ios-ajuda')?.classList.remove('hidden');
-        $('pwa-ios-ajuda')?.classList.add('flex');
-        return;
-      }
-      C.ui.toast('No celular, abra o menu do navegador e toque em Instalar aplicativo.', 'info');
+      abrirAjuda();
     }
   };
 })(window.Campanha);

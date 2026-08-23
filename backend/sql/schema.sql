@@ -9,6 +9,8 @@
 -- Observações da entrega: backend/sql/patch-entrega-observacoes.sql
 -- Todos veem as entregas; alterar só quem está em Quem entregou: backend/sql/patch-entregas-visao-geral.sql
 -- Maps com endereço correto: backend/sql/patch-entrega-maps.sql
+-- Forma de pagamento e comprovante opcional: backend/sql/patch-pagamento-forma.sql
+-- Perfis admin / geral / motorista: backend/sql/patch-tipos-usuario.sql
 -- =============================================================================
 -- Login inicial após executar:
 --   usuário: admin
@@ -40,11 +42,12 @@ CREATE TABLE IF NOT EXISTS public.usuarios (
   nome        text NOT NULL,
   login       text NOT NULL,
   senha_hash  text NOT NULL,
-  tipo        public.tipo_perfil NOT NULL DEFAULT 'usuario',
+  tipo        text NOT NULL DEFAULT 'motorista',
   created_at  timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT usuarios_login_unique UNIQUE (login),
   CONSTRAINT usuarios_login_chk CHECK (length(trim(login)) >= 3),
-  CONSTRAINT usuarios_nome_chk CHECK (length(trim(nome)) >= 2)
+  CONSTRAINT usuarios_nome_chk CHECK (length(trim(nome)) >= 2),
+  CONSTRAINT usuarios_tipo_chk CHECK (tipo IN ('admin', 'geral', 'motorista'))
 );
 
 CREATE TABLE IF NOT EXISTS public.tipos_material (
@@ -127,12 +130,19 @@ CREATE TABLE IF NOT EXISTS public.pagamentos_folha (
   usuario_id      uuid NOT NULL REFERENCES public.usuarios(id) ON DELETE RESTRICT,
   data_pagamento  date NOT NULL DEFAULT CURRENT_DATE,
   valor           numeric(12,2) NOT NULL,
-  comprovante     text NOT NULL,
+  comprovante     text,
+  forma           text NOT NULL DEFAULT 'pix',
   ocr_texto       text,
   created_at      timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT pagamentos_folha_valor_chk CHECK (valor >= 0),
-  CONSTRAINT pagamentos_folha_comp_chk CHECK (length(comprovante) BETWEEN 32 AND 1500000)
+  CONSTRAINT pagamentos_folha_forma_chk CHECK (forma IN ('dinheiro', 'deposito', 'pix')),
+  CONSTRAINT pagamentos_folha_comp_chk CHECK (
+    comprovante IS NULL OR length(comprovante) BETWEEN 32 AND 1500000
+  )
 );
+
+ALTER TABLE public.pagamentos_folha ADD COLUMN IF NOT EXISTS forma text;
+ALTER TABLE public.pagamentos_folha ALTER COLUMN comprovante DROP NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_pagamentos_folha_colaborador
   ON public.pagamentos_folha (colaborador_id, data_pagamento DESC);
@@ -300,8 +310,34 @@ DECLARE
   v_user public.usuarios;
 BEGIN
   v_user := public._exige_login(p_token);
-  IF v_user.tipo <> 'admin' THEN
+  IF v_user.tipo::text <> 'admin' THEN
     RAISE EXCEPTION 'Acesso restrito a administradores.';
+  END IF;
+  RETURN v_user;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public._eh_gestao(p_tipo text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT p_tipo IN ('admin', 'geral');
+$$;
+
+CREATE OR REPLACE FUNCTION public._exige_gestao(p_token text)
+RETURNS public.usuarios
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  v_user public.usuarios;
+BEGIN
+  v_user := public._exige_login(p_token);
+  IF NOT public._eh_gestao(v_user.tipo::text) THEN
+    RAISE EXCEPTION 'Acesso restrito.';
   END IF;
   RETURN v_user;
 END;
@@ -470,7 +506,7 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 BEGIN
-  PERFORM public._exige_admin(p_token);
+  PERFORM public._exige_gestao(p_token);
 
   RETURN COALESCE((
     SELECT json_agg(row_to_json(t) ORDER BY t.nome)
@@ -515,16 +551,23 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 DECLARE
-  v_admin public.usuarios;
-  v_id    uuid;
-  v_tipo  public.tipo_perfil;
+  v_editor     public.usuarios;
+  v_id         uuid;
+  v_tipo       text;
+  v_atual_tipo text;
 BEGIN
-  v_admin := public._exige_admin(p_token);
+  v_editor := public._exige_gestao(p_token);
 
-  IF p_tipo NOT IN ('admin', 'usuario') THEN
+  v_tipo := lower(trim(COALESCE(p_tipo, '')));
+  IF v_tipo = 'usuario' THEN
+    v_tipo := 'motorista';
+  END IF;
+  IF v_tipo NOT IN ('admin', 'geral', 'motorista') THEN
     RAISE EXCEPTION 'Tipo de usuário inválido.';
   END IF;
-  v_tipo := p_tipo::public.tipo_perfil;
+  IF v_tipo = 'admin' AND v_editor.tipo::text <> 'admin' THEN
+    RAISE EXCEPTION 'Somente o administrador pode cadastrar outro administrador.';
+  END IF;
 
   IF p_id IS NULL THEN
     IF p_senha IS NULL OR length(p_senha) < 6 THEN
@@ -535,8 +578,12 @@ BEGIN
     VALUES (trim(p_nome), lower(trim(p_login)), extensions.crypt(p_senha, extensions.gen_salt('bf')), v_tipo)
     RETURNING id INTO v_id;
   ELSE
-    IF p_id = v_admin.id AND v_tipo <> 'admin' THEN
-      RAISE EXCEPTION 'Você não pode remover o próprio perfil de administrador.';
+    SELECT tipo::text INTO v_atual_tipo FROM public.usuarios WHERE id = p_id;
+    IF v_atual_tipo = 'admin' AND v_editor.tipo::text <> 'admin' THEN
+      RAISE EXCEPTION 'Somente o administrador pode alterar um administrador.';
+    END IF;
+    IF p_id = v_editor.id AND v_tipo <> v_editor.tipo::text THEN
+      RAISE EXCEPTION 'Você não pode alterar o próprio tipo de acesso.';
     END IF;
 
     UPDATE public.usuarios
@@ -567,12 +614,18 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 DECLARE
-  v_admin public.usuarios;
+  v_editor     public.usuarios;
+  v_atual_tipo text;
 BEGIN
-  v_admin := public._exige_admin(p_token);
+  v_editor := public._exige_gestao(p_token);
 
-  IF p_id = v_admin.id THEN
+  IF p_id = v_editor.id THEN
     RAISE EXCEPTION 'Você não pode excluir o próprio usuário.';
+  END IF;
+
+  SELECT tipo::text INTO v_atual_tipo FROM public.usuarios WHERE id = p_id;
+  IF v_atual_tipo = 'admin' AND v_editor.tipo::text <> 'admin' THEN
+    RAISE EXCEPTION 'Somente o administrador pode excluir outro administrador.';
   END IF;
 
   IF EXISTS (SELECT 1 FROM public.entregas WHERE usuario_id = p_id) THEN
@@ -609,7 +662,7 @@ BEGIN
       SELECT
         c.id,
         c.nome,
-        CASE WHEN v_user.tipo = 'admin' THEN to_jsonb(c)->>'cpf' ELSE NULL END AS cpf,
+        CASE WHEN public._eh_gestao(v_user.tipo::text) THEN to_jsonb(c)->>'cpf' ELSE NULL END AS cpf,
         c.telefone,
         c.endereco,
         c.numero,
@@ -618,12 +671,12 @@ BEGIN
         c.cidade,
         c.estado,
         c.data_inicio,
-        CASE WHEN v_user.tipo = 'admin' THEN c.folha ELSE NULL END AS folha,
-        CASE WHEN v_user.tipo = 'admin' THEN c.valor_mensal ELSE NULL END AS valor_mensal,
-        CASE WHEN v_user.tipo = 'admin' THEN to_jsonb(c)->>'banco' ELSE NULL END AS banco,
-        CASE WHEN v_user.tipo = 'admin' THEN to_jsonb(c)->>'agencia' ELSE NULL END AS agencia,
-        CASE WHEN v_user.tipo = 'admin' THEN to_jsonb(c)->>'conta' ELSE NULL END AS conta,
-        CASE WHEN v_user.tipo = 'admin' THEN (
+        CASE WHEN public._eh_gestao(v_user.tipo::text) THEN c.folha ELSE NULL END AS folha,
+        CASE WHEN public._eh_gestao(v_user.tipo::text) THEN c.valor_mensal ELSE NULL END AS valor_mensal,
+        CASE WHEN public._eh_gestao(v_user.tipo::text) THEN to_jsonb(c)->>'banco' ELSE NULL END AS banco,
+        CASE WHEN public._eh_gestao(v_user.tipo::text) THEN to_jsonb(c)->>'agencia' ELSE NULL END AS agencia,
+        CASE WHEN public._eh_gestao(v_user.tipo::text) THEN to_jsonb(c)->>'conta' ELSE NULL END AS conta,
+        CASE WHEN public._eh_gestao(v_user.tipo::text) THEN (
           SELECT MAX(p.data_pagamento)
           FROM public.pagamentos_folha p
           WHERE p.colaborador_id = c.id
@@ -713,7 +766,7 @@ DECLARE
   v_agencia text;
   v_conta   text;
 BEGIN
-  PERFORM public._exige_admin(p_token);
+  PERFORM public._exige_gestao(p_token);
 
   v_folha := COALESCE(p_folha, false);
   v_valor := CASE WHEN v_folha THEN p_valor_mensal ELSE NULL END;
@@ -806,7 +859,7 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 BEGIN
-  PERFORM public._exige_admin(p_token);
+  PERFORM public._exige_gestao(p_token);
 
   IF EXISTS (SELECT 1 FROM public.entregas WHERE colaborador_id = p_id) THEN
     RAISE EXCEPTION 'Este colaborador possui entregas e não pode ser excluído.';
@@ -850,6 +903,8 @@ BEGIN
         p.colaborador_id,
         p.data_pagamento,
         p.valor,
+        p.forma,
+        (p.comprovante IS NOT NULL AND length(trim(p.comprovante)) >= 32) AS tem_comprovante,
         p.usuario_id,
         u.nome AS usuario_nome,
         p.created_at
@@ -880,6 +935,7 @@ BEGIN
       p.colaborador_id,
       p.data_pagamento,
       p.valor,
+      p.forma,
       p.comprovante,
       p.usuario_id,
       u.nome AS usuario_nome,
@@ -897,12 +953,15 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.salvar_pagamento_folha(text, uuid, date, numeric, text, text);
+
 CREATE OR REPLACE FUNCTION public.salvar_pagamento_folha(
   p_token           text,
   p_colaborador_id  uuid,
   p_data_pagamento  date,
   p_valor           numeric,
-  p_comprovante     text,
+  p_forma           text,
+  p_comprovante     text DEFAULT NULL,
   p_ocr_texto       text DEFAULT NULL
 )
 RETURNS json
@@ -911,9 +970,10 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 DECLARE
-  v_user public.usuarios;
-  v_id   uuid;
-  v_comp text;
+  v_user  public.usuarios;
+  v_id    uuid;
+  v_comp  text;
+  v_forma text;
 BEGIN
   v_user := public._exige_admin(p_token);
 
@@ -932,21 +992,29 @@ BEGIN
     RAISE EXCEPTION 'Informe o valor do pagamento.';
   END IF;
 
-  v_comp := trim(COALESCE(p_comprovante, ''));
-  IF v_comp !~ '^data:image/(jpeg|jpg|png|webp);base64,' THEN
-    RAISE EXCEPTION 'Anexe a foto do comprovante.';
+  v_forma := lower(trim(COALESCE(p_forma, '')));
+  IF v_forma NOT IN ('dinheiro', 'deposito', 'pix') THEN
+    RAISE EXCEPTION 'Informe a forma de pagamento.';
   END IF;
-  IF length(v_comp) < 32 OR length(v_comp) > 1500000 THEN
-    RAISE EXCEPTION 'A foto do comprovante é inválida ou grande demais.';
+
+  v_comp := nullif(trim(COALESCE(p_comprovante, '')), '');
+  IF v_comp IS NOT NULL THEN
+    IF v_comp !~ '^data:image/(jpeg|jpg|png|webp);base64,' THEN
+      RAISE EXCEPTION 'A foto do comprovante é inválida.';
+    END IF;
+    IF length(v_comp) < 32 OR length(v_comp) > 1500000 THEN
+      RAISE EXCEPTION 'A foto do comprovante é inválida ou grande demais.';
+    END IF;
   END IF;
 
   INSERT INTO public.pagamentos_folha (
-    colaborador_id, usuario_id, data_pagamento, valor, comprovante, ocr_texto
+    colaborador_id, usuario_id, data_pagamento, valor, forma, comprovante, ocr_texto
   ) VALUES (
     p_colaborador_id,
     v_user.id,
     p_data_pagamento,
     round(p_valor, 2),
+    v_forma,
     v_comp,
     NULLIF(trim(COALESCE(p_ocr_texto, '')), '')
   )
@@ -1032,6 +1100,8 @@ BEGIN
           'id', p.id,
           'data_pagamento', p.data_pagamento,
           'valor', p.valor,
+          'forma', p.forma,
+          'tem_comprovante', (p.comprovante IS NOT NULL AND length(trim(p.comprovante)) >= 32),
           'usuario_nome', u.nome
         ) ORDER BY p.data_pagamento DESC, p.created_at DESC)
         FROM public.pagamentos_folha p
@@ -1142,7 +1212,7 @@ AS $$
 DECLARE
   v_id uuid;
 BEGIN
-  PERFORM public._exige_admin(p_token);
+  PERFORM public._exige_gestao(p_token);
 
   IF p_id IS NULL THEN
     INSERT INTO public.tipos_material (nome)
@@ -1172,7 +1242,7 @@ AS $$
 DECLARE
   v_nome text;
 BEGIN
-  PERFORM public._exige_admin(p_token);
+  PERFORM public._exige_gestao(p_token);
 
   SELECT nome INTO v_nome FROM public.tipos_material WHERE id = p_id;
   IF v_nome IS NULL THEN
@@ -1224,7 +1294,7 @@ AS $$
 DECLARE
   v_id uuid;
 BEGIN
-  PERFORM public._exige_admin(p_token);
+  PERFORM public._exige_gestao(p_token);
 
   IF NOT EXISTS (SELECT 1 FROM public.tipos_material WHERE nome = trim(p_tipo)) THEN
     RAISE EXCEPTION 'Tipo de material inválido.';
@@ -1257,7 +1327,7 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 BEGIN
-  PERFORM public._exige_admin(p_token);
+  PERFORM public._exige_gestao(p_token);
 
   IF EXISTS (SELECT 1 FROM public.entrega_itens WHERE material_id = p_id) THEN
     RAISE EXCEPTION 'Este material possui entregas e não pode ser excluído.';
@@ -1287,7 +1357,7 @@ DECLARE
   v_admin boolean;
 BEGIN
   v_user := public._exige_login(p_token);
-  v_admin := (v_user.tipo::text = 'admin');
+  v_admin := public._eh_gestao(v_user.tipo::text);
 
   RETURN COALESCE((
     SELECT json_agg(row_to_json(t) ORDER BY t.data_entrega DESC, t.created_at DESC)
@@ -1421,7 +1491,7 @@ DECLARE
   v_col      public.colaboradores;
 BEGIN
   v_user := public._exige_login(p_token);
-  v_admin := (v_user.tipo::text = 'admin');
+  v_admin := public._eh_gestao(v_user.tipo::text);
 
   BEGIN
     v_status := COALESCE(NULLIF(trim(p_status), ''), 'novo')::public.status_entrega;
@@ -1569,7 +1639,7 @@ AS $$
 DECLARE
   v_id uuid;
 BEGIN
-  PERFORM public._exige_admin(p_token);
+  PERFORM public._exige_gestao(p_token);
 
   DELETE FROM public.entregas
   WHERE id = p_id
@@ -1620,7 +1690,7 @@ BEGIN
     data_entrega = COALESCE(p_data_entrega, e.data_entrega)
   WHERE e.id = p_id
     AND (
-      v_user.tipo = 'admin'
+      public._eh_gestao(v_user.tipo::text)
       OR EXISTS (
         SELECT 1 FROM public.entrega_entregadores ee
         WHERE ee.entrega_id = e.id AND ee.usuario_id = v_user.id
@@ -1660,7 +1730,7 @@ DECLARE
   v_custo numeric;
   v_folha integer;
 BEGIN
-  PERFORM public._exige_admin(p_token);
+  PERFORM public._exige_gestao(p_token);
 
   WITH filtrado AS (
     SELECT
@@ -1778,7 +1848,7 @@ GRANT EXECUTE ON FUNCTION public.salvar_colaborador(text, uuid, text, text, text
 GRANT EXECUTE ON FUNCTION public.excluir_colaborador(text, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_pagamentos_folha(text, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.obter_pagamento_folha(text, uuid) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.salvar_pagamento_folha(text, uuid, date, numeric, text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.salvar_pagamento_folha(text, uuid, date, numeric, text, text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.excluir_pagamento_folha(text, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.relatorio_folha_pagamento(text, date, date, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_tipos(text) TO anon, authenticated;
@@ -1797,6 +1867,8 @@ GRANT EXECUTE ON FUNCTION public.relatorio_entregas(text, uuid, text, date, date
 REVOKE EXECUTE ON FUNCTION public._sessao(text) FROM anon, authenticated, public;
 REVOKE EXECUTE ON FUNCTION public._exige_login(text) FROM anon, authenticated, public;
 REVOKE EXECUTE ON FUNCTION public._exige_admin(text) FROM anon, authenticated, public;
+REVOKE EXECUTE ON FUNCTION public._exige_gestao(text) FROM anon, authenticated, public;
+REVOKE EXECUTE ON FUNCTION public._eh_gestao(text) FROM anon, authenticated, public;
 
 -- -----------------------------------------------------------------------------
 -- Dados iniciais
