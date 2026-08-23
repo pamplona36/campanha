@@ -11,6 +11,7 @@
 -- Maps com endereço correto: backend/sql/patch-entrega-maps.sql
 -- Forma de pagamento e comprovante opcional: backend/sql/patch-pagamento-forma.sql
 -- Perfis admin / geral / motorista: backend/sql/patch-tipos-usuario.sql
+-- Tipo do colaborador (líder / agente / comércio): backend/sql/patch-colaborador-tipo.sql
 -- =============================================================================
 -- Login inicial após executar:
 --   usuário: admin
@@ -74,6 +75,7 @@ CREATE TABLE IF NOT EXISTS public.colaboradores (
   banco         text,
   agencia       text,
   conta         text,
+  tipo          text,
   data_inicio   date,
   created_at    timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT colaboradores_nome_chk CHECK (length(trim(nome)) >= 2),
@@ -85,6 +87,9 @@ CREATE TABLE IF NOT EXISTS public.colaboradores (
   ),
   CONSTRAINT colaboradores_estado_chk CHECK (
     estado IS NULL OR char_length(estado) = 2
+  ),
+  CONSTRAINT colaboradores_tipo_chk CHECK (
+    tipo IS NULL OR tipo IN ('lider', 'agente', 'comercio')
   )
 );
 
@@ -93,6 +98,11 @@ ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS telefone text;
 ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS banco text;
 ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS agencia text;
 ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS conta text;
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS tipo text;
+
+ALTER TABLE public.colaboradores DROP CONSTRAINT IF EXISTS colaboradores_tipo_chk;
+ALTER TABLE public.colaboradores ADD CONSTRAINT colaboradores_tipo_chk
+  CHECK (tipo IS NULL OR tipo IN ('lider', 'agente', 'comercio'));
 
 ALTER TABLE public.colaboradores DROP CONSTRAINT IF EXISTS colaboradores_cpf_chk;
 ALTER TABLE public.colaboradores ADD CONSTRAINT colaboradores_cpf_chk
@@ -670,6 +680,7 @@ BEGIN
         c.bairro,
         c.cidade,
         c.estado,
+        c.tipo,
         c.data_inicio,
         CASE WHEN public._eh_gestao(v_user.tipo::text) THEN c.folha ELSE NULL END AS folha,
         CASE WHEN public._eh_gestao(v_user.tipo::text) THEN c.valor_mensal ELSE NULL END AS valor_mensal,
@@ -730,6 +741,7 @@ $$;
 
 DROP FUNCTION IF EXISTS public.salvar_colaborador(text, uuid, text, text, text, text, text, text, text, boolean, numeric, date);
 DROP FUNCTION IF EXISTS public.salvar_colaborador(text, uuid, text, text, text, text, text, text, text, boolean, numeric, date, text, text, text, text);
+DROP FUNCTION IF EXISTS public.salvar_colaborador(text, uuid, text, text, text, text, text, text, text, boolean, numeric, date, text, text, text, text, text);
 
 CREATE OR REPLACE FUNCTION public.salvar_colaborador(
   p_token        text,
@@ -748,7 +760,8 @@ CREATE OR REPLACE FUNCTION public.salvar_colaborador(
   p_banco        text DEFAULT NULL,
   p_agencia      text DEFAULT NULL,
   p_conta        text DEFAULT NULL,
-  p_telefone     text DEFAULT NULL
+  p_telefone     text DEFAULT NULL,
+  p_tipo         text DEFAULT NULL
 )
 RETURNS json
 LANGUAGE plpgsql
@@ -765,6 +778,7 @@ DECLARE
   v_banco   text;
   v_agencia text;
   v_conta   text;
+  v_tipo    text;
 BEGIN
   PERFORM public._exige_gestao(p_token);
 
@@ -778,6 +792,10 @@ BEGIN
   v_cpf := CASE WHEN v_cpf = '' THEN NULL ELSE v_cpf END;
   v_tel := regexp_replace(COALESCE(p_telefone, ''), '\D', '', 'g');
   v_tel := CASE WHEN v_tel = '' THEN NULL ELSE v_tel END;
+  v_tipo := lower(trim(COALESCE(p_tipo, '')));
+  IF v_tipo NOT IN ('lider', 'agente', 'comercio') THEN
+    RAISE EXCEPTION 'Informe o tipo do colaborador.';
+  END IF;
 
   IF v_cpf IS NOT NULL AND char_length(v_cpf) <> 11 THEN
     RAISE EXCEPTION 'Informe um CPF válido.';
@@ -815,12 +833,12 @@ BEGIN
   IF p_id IS NULL THEN
     INSERT INTO public.colaboradores (
       nome, cpf, telefone, endereco, numero, complemento, bairro, cidade, estado,
-      folha, valor_mensal, banco, agencia, conta, data_inicio
+      folha, valor_mensal, banco, agencia, conta, tipo, data_inicio
     ) VALUES (
       trim(p_nome), v_cpf, v_tel, nullif(trim(p_endereco), ''), nullif(trim(p_numero), ''),
       nullif(trim(p_complemento), ''), nullif(trim(p_bairro), ''),
       nullif(trim(p_cidade), ''), v_uf,
-      v_folha, v_valor, v_banco, v_agencia, v_conta, p_data_inicio
+      v_folha, v_valor, v_banco, v_agencia, v_conta, v_tipo, p_data_inicio
     )
     RETURNING id INTO v_id;
   ELSE
@@ -839,6 +857,7 @@ BEGIN
       banco = v_banco,
       agencia = v_agencia,
       conta = v_conta,
+      tipo = v_tipo,
       data_inicio = p_data_inicio
     WHERE id = p_id
     RETURNING id INTO v_id;
@@ -1844,7 +1863,7 @@ GRANT EXECUTE ON FUNCTION public.excluir_usuario(text, uuid) TO anon, authentica
 GRANT EXECUTE ON FUNCTION public.listar_colaboradores(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_estados(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_cidades(text, text) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.salvar_colaborador(text, uuid, text, text, text, text, text, text, text, boolean, numeric, date, text, text, text, text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.salvar_colaborador(text, uuid, text, text, text, text, text, text, text, boolean, numeric, date, text, text, text, text, text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.excluir_colaborador(text, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_pagamentos_folha(text, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.obter_pagamento_folha(text, uuid) TO anon, authenticated;

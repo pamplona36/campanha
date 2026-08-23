@@ -2,7 +2,7 @@ window.Campanha = window.Campanha || {};
 
 (function (C) {
   const $ = (id) => C.utils.$(id);
-  const { esc, formatarData, formatarMoeda, formatarCpf, formatarTelefone, cpfValido, telefoneValido, soDigitos, rotuloBanco, matchFiltro, hojeISO } = C.utils;
+  const { esc, formatarData, formatarMoeda, formatarCpf, formatarTelefone, cpfValido, telefoneValido, soDigitos, rotuloBanco, rotuloTipoColaborador, matchFiltro, hojeISO } = C.utils;
 
   let folha = false;
   let filtro = '';
@@ -46,6 +46,7 @@ window.Campanha = window.Campanha || {};
     $('col-form-titulo').textContent = 'Novo colaborador';
     setFolha(false);
     C.localidades.aplicarPadrao($('col-estado'), $('col-cidade'));
+    C.utils.definirSelect($('col-tipo'), '');
     C.chosen.atualizar($('col-banco'));
   }
 
@@ -73,6 +74,8 @@ window.Campanha = window.Campanha || {};
       c.bairro,
       c.cidade,
       c.estado,
+      rotuloTipoColaborador(c.tipo),
+      c.tipo,
       rotuloBanco(c.banco),
       c.agencia,
       c.conta,
@@ -139,6 +142,7 @@ window.Campanha = window.Campanha || {};
             <p class="mt-1 text-sm text-slate-600">${esc(endereco || 'Endereço não informado')}</p>
             <p class="text-sm text-slate-500">${esc(local || '')}</p>
             <div class="mt-3 flex flex-wrap gap-2 text-xs font-bold">
+              ${c.tipo ? `<span class="rounded-full bg-brand-50 px-3 py-1 text-brand-800">${esc(rotuloTipoColaborador(c.tipo))}</span>` : ''}
               <span class="rounded-full ${c.folha ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'} px-3 py-1">
                 Folha: ${c.folha ? 'Sim' : 'Não'}
               </span>
@@ -153,12 +157,13 @@ window.Campanha = window.Campanha || {};
           </article>
         `;
       }).join(''),
-      colunas: ['Nome', 'Cidade', 'Início', 'Ações'],
+      colunas: ['Nome', 'Tipo', 'Cidade', 'Início', 'Ações'],
       linhas: itens.map((c) => {
         const cidade = [c.cidade, c.estado].filter(Boolean).join('/') || '—';
         return `
           <tr>
             <td>${htmlNomeColaborador(c)}</td>
+            <td>${esc(rotuloTipoColaborador(c.tipo) || '—')}</td>
             <td>${esc(cidade)}</td>
             <td>${c.data_inicio ? formatarData(c.data_inicio) : '—'}</td>
             <td class="ent-acoes">${menuAcoesGrid(c)}</td>
@@ -292,7 +297,7 @@ window.Campanha = window.Campanha || {};
         <div id="view-colaboradores" data-view class="hidden space-y-4">
           ${C.ui.barraCrud({
             filtroId: 'filtro-colaboradores',
-            placeholder: 'Filtrar por nome, CPF, telefone, cidade ou bairro',
+            placeholder: 'Filtrar por nome, tipo, CPF, telefone, cidade ou bairro',
             botaoId: 'btn-novo-colaborador'
           })}
           <div id="lista-colaboradores"></div>
@@ -306,6 +311,14 @@ window.Campanha = window.Campanha || {};
 
                 <label class="mb-1 block text-sm font-semibold" for="col-nome">Nome</label>
                 <input id="col-nome" class="field mb-3" required />
+
+                <label class="mb-1 block text-sm font-semibold" for="col-tipo">Tipo</label>
+                <select id="col-tipo" class="field mb-3" required>
+                  <option value="">Selecione o tipo</option>
+                  <option value="lider">Líder</option>
+                  <option value="agente">Agente</option>
+                  <option value="comercio">Comércio</option>
+                </select>
 
                 <label class="mb-1 block text-sm font-semibold" for="col-cpf">CPF</label>
                 <input id="col-cpf" class="field mb-3" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="000.000.000-00" />
@@ -479,6 +492,11 @@ window.Campanha = window.Campanha || {};
           C.ui.toast('Informe um telefone válido com DDD.', 'erro');
           return;
         }
+        const tipo = $('col-tipo').value;
+        if (!['lider', 'agente', 'comercio'].includes(tipo)) {
+          C.ui.toast('Informe o tipo do colaborador.', 'erro');
+          return;
+        }
         if (folha && ($('col-valor').value === '' || Number($('col-valor').value) < 0)) {
           C.ui.toast('Informe o valor mensal da folha.', 'erro');
           return;
@@ -488,6 +506,7 @@ window.Campanha = window.Campanha || {};
           await C.api.rpc('salvar_colaborador', {
             p_id: $('col-id').value || null,
             p_nome: $('col-nome').value,
+            p_tipo: tipo,
             p_cpf: cpf || null,
             p_telefone: telefone || null,
             p_endereco: $('col-endereco').value,
@@ -635,6 +654,7 @@ window.Campanha = window.Campanha || {};
       if (!c) return;
       $('col-id').value = c.id;
       $('col-nome').value = c.nome || '';
+      C.utils.definirSelect($('col-tipo'), c.tipo || '');
       $('col-cpf').value = c.cpf ? formatarCpf(c.cpf) : '';
       $('col-telefone').value = c.telefone ? formatarTelefone(c.telefone) : '';
       $('col-endereco').value = c.endereco || '';

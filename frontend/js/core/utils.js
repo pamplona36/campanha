@@ -126,6 +126,16 @@ Campanha.utils = {
     return mapa[Campanha.utils.tipoUsuario(tipo)] || 'Motorista';
   },
 
+  TIPOS_COLABORADOR: [
+    { id: 'lider', nome: 'Líder' },
+    { id: 'agente', nome: 'Agente' },
+    { id: 'comercio', nome: 'Comércio' }
+  ],
+
+  rotuloTipoColaborador(tipo) {
+    return Campanha.utils.TIPOS_COLABORADOR.find((t) => t.id === tipo)?.nome || '';
+  },
+
   preencherSelect(el, items, { value, label, placeholder } = {}) {
     const esc = Campanha.utils.esc;
     const opts = [`<option value="">${esc(placeholder || 'Selecione')}</option>`];
