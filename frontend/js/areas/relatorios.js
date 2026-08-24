@@ -115,7 +115,10 @@ window.Campanha = window.Campanha || {};
         <p class="text-sm font-semibold text-slate-600">
           ${esc(String(totais.entregas || itens.length))} entrega(s) · ${esc(String(totais.quantidade ?? '—'))} material(is)
         </p>
-        <button type="button" id="btn-relatorio-pdf" class="btn-primary w-full sm:w-auto sm:min-w-[180px] px-5">Gerar PDF</button>
+        <button type="button" id="btn-relatorio-pdf" class="btn-print w-full sm:w-auto sm:min-w-[220px] px-5">
+          ${C.ui.icone('impressora')}
+          Imprimir relatório
+        </button>
       </div>
       ${C.ui.listaDupla({
         vazioTexto: 'Nenhuma entrega encontrada para esses filtros.',

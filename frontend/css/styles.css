@@ -75,6 +75,20 @@ select.field {
 .btn-primary:active { transform: scale(0.98); }
 .btn-primary:disabled { opacity: 0.55; }
 
+.btn-print {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 52px;
+  border-radius: 1rem;
+  background: #dc2626;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.btn-print:active { transform: scale(0.98); }
+
 .sheet-enter { animation: sheetUp 0.28s ease-out; }
 .toast-enter { animation: toastIn 0.28s ease-out; }
 
