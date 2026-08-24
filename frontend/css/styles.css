@@ -669,3 +669,57 @@ select.ent-status-sel {
 #toast-container > .toast-error { background-color: #dc2626; }
 #toast-container > .toast-info { background-color: #0B3D91; }
 #toast-container > .toast-warning { background-color: #d97706; }
+
+.relatorio-print { display: none; }
+
+@media print {
+  @page { size: A4 landscape; margin: 10mm; }
+  html, body {
+    background: #fff !important;
+    color: #0f172a !important;
+  }
+  body > *:not(.relatorio-print) { display: none !important; }
+  .relatorio-print {
+    display: block !important;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    color: #0f172a;
+  }
+  .relatorio-print-kicker {
+    margin: 0 0 4px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #b8860b;
+  }
+  .relatorio-print h1 {
+    margin: 0 0 8px;
+    font-size: 20px;
+    color: #0B3D91;
+  }
+  .relatorio-print-meta,
+  .relatorio-print-totais {
+    margin: 0 0 6px;
+    font-size: 11px;
+    color: #334155;
+  }
+  .relatorio-print-totais { font-weight: 700; margin-bottom: 12px; }
+  .relatorio-print table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+  }
+  .relatorio-print th,
+  .relatorio-print td {
+    border: 1px solid #cbd5e1;
+    padding: 5px 6px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .relatorio-print th {
+    background: #0B3D91;
+    color: #fff;
+    font-weight: 700;
+  }
+  .relatorio-print tbody tr:nth-child(even) td { background: #f8fafc; }
+}
