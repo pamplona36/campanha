@@ -112,6 +112,21 @@ window.Campanha = window.Campanha || {};
     return fonte?.colaborador_telefone || col.telefone || '';
   }
 
+  function urlWhatsApp(tel) {
+    const d = soDigitos(tel);
+    if (d.length < 10) return '';
+    const numero = d.startsWith('55') ? d : `55${d}`;
+    return `https://wa.me/${numero}`;
+  }
+
+  function htmlWhatsApp(tel) {
+    const url = urlWhatsApp(tel);
+    if (!url) return '';
+    return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="ent-whatsapp" title="WhatsApp" aria-label="Abrir WhatsApp">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0012.04 2zm.01 1.67c2.2 0 4.26.86 5.82 2.42a8.22 8.22 0 012.41 5.83c0 4.54-3.7 8.23-8.24 8.23-1.48 0-2.93-.39-4.19-1.15l-.3-.17-3.12.82.83-3.04-.2-.31a8.18 8.18 0 01-1.26-4.38c0-4.54 3.7-8.24 8.25-8.24zM8.53 7.53c-.16 0-.43.06-.66.31-.22.25-.87.85-.87 2.07 0 1.22.89 2.39 1.01 2.56.12.17 1.75 2.67 4.3 3.64 1.77.68 2.14.61 2.54.56.44-.05 1.45-.59 1.65-1.16.21-.57.21-1.06.15-1.16-.06-.1-.22-.16-.44-.28-.22-.11-1.32-.65-1.52-.72-.21-.08-.35-.11-.5.12-.16.22-.6.72-.73.86-.12.15-.26.17-.48.06-.22-.11-.94-.35-1.8-1.1-.66-.59-1.11-1.32-1.24-1.54-.13-.22-.01-.34.1-.45.1-.1.22-.26.33-.39.11-.12.14-.22.22-.36.07-.15.04-.27-.02-.39-.06-.11-.5-1.2-.68-1.65-.18-.43-.36-.37-.5-.38z"/></svg>
+    </a>`;
+  }
+
   function htmlTelefone(tel) {
     if (!tel) return '';
     return `<a href="tel:+55${esc(soDigitos(tel))}" class="mt-0.5 block text-xs font-semibold text-brand-800">${esc(formatarTelefone(tel))}</a>`;
@@ -121,10 +136,17 @@ window.Campanha = window.Campanha || {};
     const col = colaboradorPorId(e.colaborador_id);
     const nome = e.colaborador_nome || col.nome || '—';
     const tipo = rotuloTipoColaborador(e.colaborador_tipo || col.tipo);
+    const tel = telefoneColaborador(e);
     const nomeHtml = tipo
       ? `${esc(nome)} <span class="font-bold text-brand-800">${esc(tipo)}</span>`
       : esc(nome);
-    return `<div class="min-w-0 ${extraClass}"><p class="font-semibold text-slate-900">${nomeHtml}</p>${htmlTelefone(telefoneColaborador(e))}</div>`;
+    return `<div class="min-w-0 ${extraClass}">
+      <p class="flex min-w-0 items-center gap-1.5 font-semibold text-slate-900">
+        <span class="min-w-0 truncate">${nomeHtml}</span>
+        ${htmlWhatsApp(tel)}
+      </p>
+      ${htmlTelefone(tel)}
+    </div>`;
   }
 
   function primeiroTexto(...vals) {

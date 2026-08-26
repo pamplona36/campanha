@@ -684,6 +684,23 @@ select.ent-status-sel {
 #toast-container > .toast-info { background-color: #0B3D91; }
 #toast-container > .toast-warning { background-color: #d97706; }
 
+.ent-whatsapp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: #25D366;
+  color: #fff;
+}
+.ent-whatsapp svg {
+  width: 16px;
+  height: 16px;
+}
+.ent-whatsapp:hover { background: #1ebe57; }
+
 .relatorio-print { display: none; }
 
 @media print {
