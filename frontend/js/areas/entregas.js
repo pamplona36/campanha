@@ -129,23 +129,22 @@ window.Campanha = window.Campanha || {};
 
   function htmlTelefone(tel) {
     if (!tel) return '';
-    return `<a href="tel:+55${esc(soDigitos(tel))}" class="mt-0.5 block text-xs font-semibold text-brand-800">${esc(formatarTelefone(tel))}</a>`;
+    return `<p class="mt-0.5 flex min-w-0 items-center gap-1.5">
+      <a href="tel:+55${esc(soDigitos(tel))}" class="text-xs font-semibold text-brand-800">${esc(formatarTelefone(tel))}</a>
+      ${htmlWhatsApp(tel)}
+    </p>`;
   }
 
   function htmlNomeColaborador(e, extraClass = '') {
     const col = colaboradorPorId(e.colaborador_id);
     const nome = e.colaborador_nome || col.nome || '—';
     const tipo = rotuloTipoColaborador(e.colaborador_tipo || col.tipo);
-    const tel = telefoneColaborador(e);
     const nomeHtml = tipo
       ? `${esc(nome)} <span class="font-bold text-brand-800">${esc(tipo)}</span>`
       : esc(nome);
     return `<div class="min-w-0 ${extraClass}">
-      <p class="flex min-w-0 items-center gap-1.5 font-semibold text-slate-900">
-        <span class="min-w-0 truncate">${nomeHtml}</span>
-        ${htmlWhatsApp(tel)}
-      </p>
-      ${htmlTelefone(tel)}
+      <p class="font-semibold text-slate-900">${nomeHtml}</p>
+      ${htmlTelefone(telefoneColaborador(e))}
     </div>`;
   }
 
