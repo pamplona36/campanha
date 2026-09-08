@@ -306,7 +306,7 @@ window.Campanha = window.Campanha || {};
             tituloId: 'col-form-titulo',
             largo: true,
             formHtml: `
-              <form id="form-colaborador">
+              <form id="form-colaborador" novalidate>
                 <input type="hidden" id="col-id" />
 
                 <label class="mb-1 block text-sm font-semibold" for="col-nome">Nome</label>
@@ -315,9 +315,7 @@ window.Campanha = window.Campanha || {};
                 <label class="mb-1 block text-sm font-semibold" for="col-tipo">Tipo</label>
                 <select id="col-tipo" class="field mb-3" required>
                   <option value="">Selecione o tipo</option>
-                  <option value="lider">Líder</option>
-                  <option value="agente">Agente</option>
-                  <option value="comercio">Comércio</option>
+                  ${C.utils.TIPOS_COLABORADOR.map((t) => `<option value="${esc(t.id)}">${esc(t.nome)}</option>`).join('')}
                 </select>
 
                 <label class="mb-1 block text-sm font-semibold" for="col-cpf">CPF</label>
@@ -482,6 +480,7 @@ window.Campanha = window.Campanha || {};
       $('btn-cancelar-colaborador').addEventListener('click', () => C.ui.fecharModal('modal-colaborador'));
       $('form-colaborador').addEventListener('submit', async (ev) => {
         ev.preventDefault();
+        if (!C.ui.validarObrigatorios(ev.currentTarget)) return;
         const cpf = soDigitos($('col-cpf').value);
         const telefone = soDigitos($('col-telefone').value);
         if (cpf && !cpfValido($('col-cpf').value)) {
@@ -493,11 +492,11 @@ window.Campanha = window.Campanha || {};
           return;
         }
         const tipo = $('col-tipo').value;
-        if (!['lider', 'agente', 'comercio'].includes(tipo)) {
+        if (!C.utils.TIPOS_COLABORADOR.some((t) => t.id === tipo)) {
           C.ui.toast('Informe o tipo do colaborador.', 'erro');
           return;
         }
-        if (folha && ($('col-valor').value === '' || Number($('col-valor').value) < 0)) {
+        if (folha && Number($('col-valor').value) < 0) {
           C.ui.toast('Informe o valor mensal da folha.', 'erro');
           return;
         }

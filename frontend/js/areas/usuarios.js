@@ -104,7 +104,7 @@ window.Campanha = window.Campanha || {};
             id: 'modal-usuario',
             tituloId: 'usu-form-titulo',
             formHtml: `
-              <form id="form-usuario">
+              <form id="form-usuario" novalidate>
                 <input type="hidden" id="usu-id" />
 
                 <label class="mb-1 block text-sm font-semibold" for="usu-nome">Nome</label>
@@ -145,6 +145,7 @@ window.Campanha = window.Campanha || {};
       $('btn-cancelar-usuario').addEventListener('click', () => C.ui.fecharModal('modal-usuario'));
       $('form-usuario').addEventListener('submit', async (ev) => {
         ev.preventDefault();
+        if (!C.ui.validarObrigatorios(ev.currentTarget)) return;
         const id = $('usu-id').value || null;
         const senha = $('usu-senha').value;
         if (!id && senha.length < 6) {

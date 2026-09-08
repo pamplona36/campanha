@@ -11,7 +11,8 @@
 -- Maps com endereço correto: backend/sql/patch-entrega-maps.sql
 -- Forma de pagamento e comprovante opcional: backend/sql/patch-pagamento-forma.sql
 -- Perfis admin / geral / motorista: backend/sql/patch-tipos-usuario.sql
--- Tipo do colaborador (líder / agente / comércio): backend/sql/patch-colaborador-tipo.sql
+-- Tipo do colaborador (líder / agente / comércio / apoiador): backend/sql/patch-colaborador-tipo.sql
+-- Tipo apoiador: backend/sql/patch-colaborador-tipo-apoiador.sql
 -- Tipo do colaborador no grid de entregas: backend/sql/patch-entrega-colaborador-tipo.sql
 -- =============================================================================
 -- Login inicial após executar:
@@ -90,7 +91,7 @@ CREATE TABLE IF NOT EXISTS public.colaboradores (
     estado IS NULL OR char_length(estado) = 2
   ),
   CONSTRAINT colaboradores_tipo_chk CHECK (
-    tipo IS NULL OR tipo IN ('lider', 'agente', 'comercio')
+    tipo IS NULL OR tipo IN ('lider', 'agente', 'comercio', 'apoiador')
   )
 );
 
@@ -103,7 +104,7 @@ ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS tipo text;
 
 ALTER TABLE public.colaboradores DROP CONSTRAINT IF EXISTS colaboradores_tipo_chk;
 ALTER TABLE public.colaboradores ADD CONSTRAINT colaboradores_tipo_chk
-  CHECK (tipo IS NULL OR tipo IN ('lider', 'agente', 'comercio'));
+  CHECK (tipo IS NULL OR tipo IN ('lider', 'agente', 'comercio', 'apoiador'));
 
 ALTER TABLE public.colaboradores DROP CONSTRAINT IF EXISTS colaboradores_cpf_chk;
 ALTER TABLE public.colaboradores ADD CONSTRAINT colaboradores_cpf_chk
@@ -794,7 +795,7 @@ BEGIN
   v_tel := regexp_replace(COALESCE(p_telefone, ''), '\D', '', 'g');
   v_tel := CASE WHEN v_tel = '' THEN NULL ELSE v_tel END;
   v_tipo := lower(trim(COALESCE(p_tipo, '')));
-  IF v_tipo NOT IN ('lider', 'agente', 'comercio') THEN
+  IF v_tipo NOT IN ('lider', 'agente', 'comercio', 'apoiador') THEN
     RAISE EXCEPTION 'Informe o tipo do colaborador.';
   END IF;
 

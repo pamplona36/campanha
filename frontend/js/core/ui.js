@@ -21,6 +21,23 @@ window.Campanha = window.Campanha || {};
       toastr[metodo](String(texto || ''));
     },
 
+    validarObrigatorios(form) {
+      const pendentes = C.utils.camposObrigatoriosPendentes(form);
+      if (!pendentes.length) return true;
+      const nomes = pendentes.map((c) => c.nome);
+      const lista = nomes.length === 1
+        ? nomes[0]
+        : `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]}`;
+      C.ui.toast(
+        nomes.length === 1
+          ? `Campo obrigatório não preenchido: ${lista}.`
+          : `Campos obrigatórios não preenchidos: ${lista}.`,
+        'erro'
+      );
+      pendentes[0].el.focus?.();
+      return false;
+    },
+
     loading(on) {
       const el = $('loading');
       el.classList.toggle('hidden', !on);

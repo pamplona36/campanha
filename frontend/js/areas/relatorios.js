@@ -22,6 +22,21 @@ window.Campanha = window.Campanha || {};
     };
   }
 
+  function quantitativoPorMaterial(itens) {
+    const mapa = new Map();
+    for (const e of itens || []) {
+      const chave = `${e.material_id || e.material_nome || ''}|${e.material_tipo || ''}`;
+      const atual = mapa.get(chave) || {
+        nome: e.material_nome || '—',
+        tipo: e.material_tipo || '—',
+        quantidade: 0
+      };
+      atual.quantidade += Number(e.quantidade) || 0;
+      mapa.set(chave, atual);
+    }
+    return [...mapa.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  }
+
   function rotuloPeriodo(filtros) {
     if (filtros.ini && filtros.fim) return `${formatarData(filtros.ini)} a ${formatarData(filtros.fim)}`;
     if (filtros.ini) return `A partir de ${formatarData(filtros.ini)}`;
@@ -42,6 +57,15 @@ window.Campanha = window.Campanha || {};
         <td>${esc(e.colaborador_nome || '—')}</td>
         <td>${esc(e.quem_recebeu || '—')}</td>
         <td>${esc(e.entregadores_nomes || e.usuario_nome || '—')}</td>
+      </tr>
+    `).join('');
+    const resumo = quantitativoPorMaterial(rel.itens);
+    const totalResumo = resumo.reduce((acc, item) => acc + item.quantidade, 0);
+    const linhasResumo = resumo.map((item) => `
+      <tr>
+        <td>${esc(item.nome)}</td>
+        <td>${esc(item.tipo)}</td>
+        <td>${esc(String(item.quantidade))}</td>
       </tr>
     `).join('');
     return `
@@ -68,6 +92,21 @@ window.Campanha = window.Campanha || {};
           </tr>
         </thead>
         <tbody>${linhas}</tbody>
+      </table>
+      <h2>Quantitativo por material</h2>
+      <table class="relatorio-print-resumo">
+        <thead>
+          <tr>
+            <th>Material</th><th>Tipo</th><th>Qtd</th>
+          </tr>
+        </thead>
+        <tbody>${linhasResumo}</tbody>
+        <tfoot>
+          <tr>
+            <th colspan="2">Total</th>
+            <th>${esc(String(totalResumo))}</th>
+          </tr>
+        </tfoot>
       </table>
     `;
   }

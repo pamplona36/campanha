@@ -62,7 +62,7 @@ window.Campanha = window.Campanha || {};
             id: 'modal-material',
             tituloId: 'mat-form-titulo',
             formHtml: `
-              <form id="form-material">
+              <form id="form-material" novalidate>
                 <input type="hidden" id="mat-id" />
 
                 <label class="mb-1 block text-sm font-semibold" for="mat-nome">Nome</label>
@@ -95,6 +95,7 @@ window.Campanha = window.Campanha || {};
       $('btn-cancelar-material').addEventListener('click', () => C.ui.fecharModal('modal-material'));
       $('form-material').addEventListener('submit', async (ev) => {
         ev.preventDefault();
+        if (!C.ui.validarObrigatorios(ev.currentTarget)) return;
         try {
           C.ui.loading(true);
           await C.api.rpc('salvar_material', {

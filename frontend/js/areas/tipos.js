@@ -59,7 +59,7 @@ window.Campanha = window.Campanha || {};
             id: 'modal-tipo',
             tituloId: 'tipo-form-titulo',
             formHtml: `
-              <form id="form-tipo">
+              <form id="form-tipo" novalidate>
                 <input type="hidden" id="tipo-id" />
 
                 <label class="mb-1 block text-sm font-semibold" for="tipo-nome">Nome do tipo</label>
@@ -89,6 +89,7 @@ window.Campanha = window.Campanha || {};
       $('btn-cancelar-tipo').addEventListener('click', () => C.ui.fecharModal('modal-tipo'));
       $('form-tipo').addEventListener('submit', async (ev) => {
         ev.preventDefault();
+        if (!C.ui.validarObrigatorios(ev.currentTarget)) return;
         try {
           C.ui.loading(true);
           await C.api.rpc('salvar_tipo', {

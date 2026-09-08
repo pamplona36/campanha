@@ -129,7 +129,8 @@ Campanha.utils = {
   TIPOS_COLABORADOR: [
     { id: 'lider', nome: 'Líder' },
     { id: 'agente', nome: 'Agente' },
-    { id: 'comercio', nome: 'Comércio' }
+    { id: 'comercio', nome: 'Comércio' },
+    { id: 'apoiador', nome: 'Apoiador' }
   ],
 
   rotuloTipoColaborador(tipo) {
@@ -200,5 +201,37 @@ Campanha.utils = {
       reagendado: 'badge-status-reagendado'
     };
     return mapa[id] || mapa.novo;
+  },
+
+  rotuloCampo(el) {
+    if (!el) return 'Campo';
+    if (el.id) {
+      const lab = document.querySelector(`label[for="${el.id}"]`);
+      if (lab) {
+        return lab.textContent.replace(/\s*\(opcional\)\s*/gi, '').replace(/\s+/g, ' ').trim();
+      }
+    }
+    return (el.getAttribute('aria-label') || el.name || 'Campo').trim();
+  },
+
+  campoVazio(el) {
+    if (!el || el.disabled) return false;
+    if (el.type === 'checkbox' || el.type === 'radio') return !el.checked;
+    return !String(el.value || '').trim();
+  },
+
+  camposObrigatoriosPendentes(form) {
+    if (!form) return [];
+    const lista = [];
+    const vistos = new Set();
+    for (const el of form.querySelectorAll('[required]')) {
+      if (el.disabled || el.type === 'hidden' || !Campanha.utils.campoVazio(el)) continue;
+      const nome = Campanha.utils.rotuloCampo(el) || 'Campo';
+      const chave = nome.toLowerCase();
+      if (vistos.has(chave)) continue;
+      vistos.add(chave);
+      lista.push({ el, nome });
+    }
+    return lista;
   }
 };

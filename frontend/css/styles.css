@@ -728,6 +728,11 @@ select.ent-status-sel {
     font-size: 20px;
     color: #0B3D91;
   }
+  .relatorio-print h2 {
+    margin: 16px 0 8px;
+    font-size: 13px;
+    color: #0B3D91;
+  }
   .relatorio-print-meta,
   .relatorio-print-totais {
     margin: 0 0 6px;
@@ -753,4 +758,9 @@ select.ent-status-sel {
     font-weight: 700;
   }
   .relatorio-print tbody tr:nth-child(even) td { background: #f8fafc; }
+  .relatorio-print-resumo { width: 50%; }
+  .relatorio-print tfoot th {
+    background: #e2e8f0;
+    color: #0f172a;
+  }
 }
