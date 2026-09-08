@@ -30,7 +30,7 @@ window.Campanha = window.Campanha || {};
         <article class="rounded-3xl bg-white p-4 shadow-card">
           <p class="text-[11px] font-bold uppercase tracking-wide text-brand-700">${esc(m.tipo)}</p>
           <h4 class="text-base font-extrabold">${esc(m.nome)}</h4>
-          ${C.ui.botoesCard(m.id, 'materiais')}
+          ${C.ui.botoesCard(m.id, 'materiais', { clonar: true })}
         </article>
       `).join(''),
       colunas: ['Nome', 'Tipo', 'Ações'],
@@ -38,7 +38,7 @@ window.Campanha = window.Campanha || {};
         <tr>
           <td class="font-semibold text-slate-900">${esc(m.nome)}</td>
           <td>${esc(m.tipo)}</td>
-          <td class="ent-acoes">${C.ui.menuAcoesCrud(m.id, 'materiais')}</td>
+          <td class="ent-acoes">${C.ui.menuAcoesCrud(m.id, 'materiais', { clonar: true })}</td>
         </tr>
       `)
     });
@@ -130,6 +130,16 @@ window.Campanha = window.Campanha || {};
       $('mat-nome').value = m.nome;
       C.utils.definirSelect($('mat-tipo'), m.tipo);
       $('mat-form-titulo').textContent = 'Editar material';
+      C.ui.abrirModal('modal-material');
+    },
+
+    clonar(id) {
+      const m = C.state.cache.materiais.find((x) => x.id === id);
+      if (!m) return;
+      resetForm();
+      $('mat-nome').value = m.nome;
+      C.utils.definirSelect($('mat-tipo'), m.tipo);
+      $('mat-form-titulo').textContent = 'Clonar material';
       C.ui.abrirModal('modal-material');
     },
 

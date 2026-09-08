@@ -220,8 +220,10 @@ window.Campanha = window.Campanha || {};
       $('conteudo').addEventListener('click', (ev) => {
         const edit = ev.target.closest('[data-edit]');
         const del = ev.target.closest('[data-del]');
+        const clone = ev.target.closest('[data-clone]');
         if (edit) C.areas[edit.dataset.edit]?.editar?.(edit.dataset.id);
         if (del) C.areas[del.dataset.del]?.excluir?.(del.dataset.id);
+        if (clone) C.areas[clone.dataset.clone]?.clonar?.(clone.dataset.id);
       });
     }
   };
