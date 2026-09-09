@@ -5,16 +5,22 @@ window.Campanha = window.Campanha || {};
   const { esc, preencherSelect, matchFiltro } = C.utils;
   let filtro = '';
 
+  function estoqueDe(m) {
+    const n = Number(m?.estoque);
+    return Number.isFinite(n) ? n : 0;
+  }
+
   function resetForm() {
     $('form-material').reset();
     $('mat-id').value = '';
+    $('mat-estoque').value = '0';
     $('mat-form-titulo').textContent = 'Novo material';
     C.chosen.atualizar($('mat-tipo'));
   }
 
   function listaFiltrada() {
     const itens = C.state.cache.materiais || [];
-    return itens.filter((m) => matchFiltro(filtro, m.nome, m.tipo));
+    return itens.filter((m) => matchFiltro(filtro, m.nome, m.tipo, String(estoqueDe(m))));
   }
 
   function render() {
@@ -30,14 +36,16 @@ window.Campanha = window.Campanha || {};
         <article class="rounded-3xl bg-white p-4 shadow-card">
           <p class="text-[11px] font-bold uppercase tracking-wide text-brand-700">${esc(m.tipo)}</p>
           <h4 class="text-base font-extrabold">${esc(m.nome)}</h4>
+          <p class="mt-1 text-sm font-semibold text-slate-600">Estoque atual: ${esc(String(estoqueDe(m)))}</p>
           ${C.ui.botoesCard(m.id, 'materiais', { clonar: true })}
         </article>
       `).join(''),
-      colunas: ['Nome', 'Tipo', 'Ações'],
+      colunas: ['Nome', 'Tipo', 'Estoque atual', 'Ações'],
       linhas: itens.map((m) => `
         <tr>
           <td class="font-semibold text-slate-900">${esc(m.nome)}</td>
           <td>${esc(m.tipo)}</td>
+          <td>${esc(String(estoqueDe(m)))}</td>
           <td class="ent-acoes">${C.ui.menuAcoesCrud(m.id, 'materiais', { clonar: true })}</td>
         </tr>
       `)
@@ -69,7 +77,10 @@ window.Campanha = window.Campanha || {};
                 <input id="mat-nome" class="field mb-3" required />
 
                 <label class="mb-1 block text-sm font-semibold" for="mat-tipo">Tipo</label>
-                <select id="mat-tipo" class="field mb-4" required></select>
+                <select id="mat-tipo" class="field mb-3" required></select>
+
+                <label class="mb-1 block text-sm font-semibold" for="mat-estoque">Estoque atual</label>
+                <input id="mat-estoque" type="number" min="0" step="1" inputmode="numeric" class="field mb-4" required value="0" />
 
                 <div class="flex gap-2">
                   <button type="submit" class="btn-primary flex-1">Salvar</button>
@@ -96,12 +107,18 @@ window.Campanha = window.Campanha || {};
       $('form-material').addEventListener('submit', async (ev) => {
         ev.preventDefault();
         if (!C.ui.validarObrigatorios(ev.currentTarget)) return;
+        const estoque = Number($('mat-estoque').value);
+        if (!Number.isInteger(estoque) || estoque < 0) {
+          C.ui.toast('Informe o estoque atual.', 'erro');
+          return;
+        }
         try {
           C.ui.loading(true);
           await C.api.rpc('salvar_material', {
             p_id: $('mat-id').value || null,
             p_nome: $('mat-nome').value,
-            p_tipo: $('mat-tipo').value
+            p_tipo: $('mat-tipo').value,
+            p_estoque: estoque
           });
           C.ui.fecharModal('modal-material');
           C.ui.toast('Material salvo.');
@@ -130,6 +147,7 @@ window.Campanha = window.Campanha || {};
       $('mat-id').value = m.id;
       $('mat-nome').value = m.nome;
       C.utils.definirSelect($('mat-tipo'), m.tipo);
+      $('mat-estoque').value = String(estoqueDe(m));
       $('mat-form-titulo').textContent = 'Editar material';
       C.ui.abrirModal('modal-material');
     },
@@ -140,6 +158,7 @@ window.Campanha = window.Campanha || {};
       resetForm();
       $('mat-nome').value = m.nome;
       C.utils.definirSelect($('mat-tipo'), m.tipo);
+      $('mat-estoque').value = '0';
       $('mat-form-titulo').textContent = 'Clonar material';
       C.ui.abrirModal('modal-material');
     },

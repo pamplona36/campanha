@@ -82,11 +82,24 @@ function escreverAppNode(versao) {
       start: 'node server.js'
     },
     dependencies: {
-      express: '^4.21.2'
+      express: '^4.21.2',
+      qs: '6.16.0'
+    },
+    overrides: {
+      qs: '6.16.0'
     }
   };
   fs.writeFileSync(path.join(OUT, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
   fs.copyFileSync(path.join(ROOT, 'scripts', 'hostinger-server.js'), path.join(OUT, 'server.js'));
+
+  const lock = spawnSync('npm', ['install', '--package-lock-only', '--omit=dev'], {
+    cwd: OUT,
+    stdio: 'inherit',
+    shell: true
+  });
+  if (lock.status !== 0) {
+    throw new Error('Falha ao gerar o package-lock.json com qs 6.16.0.');
+  }
 }
 
 function compactar(versao) {

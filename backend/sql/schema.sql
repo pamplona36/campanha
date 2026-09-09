@@ -14,6 +14,7 @@
 -- Tipo do colaborador (líder / agente / comércio / apoiador): backend/sql/patch-colaborador-tipo.sql
 -- Tipo apoiador: backend/sql/patch-colaborador-tipo-apoiador.sql
 -- Tipo do colaborador no grid de entregas: backend/sql/patch-entrega-colaborador-tipo.sql
+-- Estoque atual do material: backend/sql/patch-material-estoque.sql
 -- =============================================================================
 -- Login inicial após executar:
 --   usuário: admin
@@ -163,13 +164,19 @@ CREATE TABLE IF NOT EXISTS public.materiais (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   nome        text NOT NULL,
   tipo        text NOT NULL,
+  estoque     integer NOT NULL DEFAULT 0,
   created_at  timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT materiais_nome_chk CHECK (length(trim(nome)) >= 2),
+  CONSTRAINT materiais_estoque_chk CHECK (estoque >= 0),
   CONSTRAINT materiais_tipo_fk FOREIGN KEY (tipo)
     REFERENCES public.tipos_material (nome)
     ON UPDATE CASCADE
     ON DELETE RESTRICT
 );
+
+ALTER TABLE public.materiais ADD COLUMN IF NOT EXISTS estoque integer NOT NULL DEFAULT 0;
+ALTER TABLE public.materiais DROP CONSTRAINT IF EXISTS materiais_estoque_chk;
+ALTER TABLE public.materiais ADD CONSTRAINT materiais_estoque_chk CHECK (estoque >= 0);
 
 CREATE TABLE IF NOT EXISTS public.entregas (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1295,17 +1302,20 @@ BEGIN
   RETURN COALESCE((
     SELECT json_agg(row_to_json(t) ORDER BY t.nome)
     FROM (
-      SELECT id, nome, tipo, created_at FROM public.materiais
+      SELECT id, nome, tipo, estoque, created_at FROM public.materiais
     ) t
   ), '[]'::json);
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.salvar_material(text, uuid, text, text);
+
 CREATE OR REPLACE FUNCTION public.salvar_material(
-  p_token text,
-  p_id    uuid,
-  p_nome  text,
-  p_tipo  text
+  p_token   text,
+  p_id      uuid,
+  p_nome    text,
+  p_tipo    text,
+  p_estoque integer DEFAULT 0
 )
 RETURNS json
 LANGUAGE plpgsql
@@ -1313,7 +1323,8 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 DECLARE
-  v_id uuid;
+  v_id      uuid;
+  v_estoque integer;
 BEGIN
   PERFORM public._exige_gestao(p_token);
 
@@ -1321,14 +1332,20 @@ BEGIN
     RAISE EXCEPTION 'Tipo de material inválido.';
   END IF;
 
+  v_estoque := COALESCE(p_estoque, 0);
+  IF v_estoque < 0 THEN
+    RAISE EXCEPTION 'Informe um estoque atual válido.';
+  END IF;
+
   IF p_id IS NULL THEN
-    INSERT INTO public.materiais (nome, tipo)
-    VALUES (trim(p_nome), trim(p_tipo))
+    INSERT INTO public.materiais (nome, tipo, estoque)
+    VALUES (trim(p_nome), trim(p_tipo), v_estoque)
     RETURNING id INTO v_id;
   ELSE
     UPDATE public.materiais
     SET nome = trim(p_nome),
-        tipo = trim(p_tipo)
+        tipo = trim(p_tipo),
+        estoque = v_estoque
     WHERE id = p_id
     RETURNING id INTO v_id;
 
@@ -1362,6 +1379,60 @@ BEGIN
   RETURN json_build_object('ok', true);
 END;
 $$;
+
+CREATE OR REPLACE FUNCTION public._trg_entrega_item_estoque()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  v_nome text;
+  v_disp integer;
+  v_delta integer;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    UPDATE public.materiais
+    SET estoque = estoque + OLD.quantidade
+    WHERE id = OLD.material_id;
+    RETURN OLD;
+  END IF;
+
+  IF TG_OP = 'UPDATE' AND OLD.material_id IS DISTINCT FROM NEW.material_id THEN
+    UPDATE public.materiais
+    SET estoque = estoque + OLD.quantidade
+    WHERE id = OLD.material_id;
+    v_delta := NEW.quantidade;
+  ELSIF TG_OP = 'UPDATE' THEN
+    v_delta := NEW.quantidade - OLD.quantidade;
+  ELSE
+    v_delta := NEW.quantidade;
+  END IF;
+
+  SELECT nome, estoque INTO v_nome, v_disp
+  FROM public.materiais
+  WHERE id = NEW.material_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Material não encontrado.';
+  END IF;
+  IF v_delta > 0 AND v_disp < v_delta THEN
+    RAISE EXCEPTION 'Estoque insuficiente de %. Disponível: %. Solicitado: %.',
+      v_nome, v_disp, NEW.quantidade;
+  END IF;
+
+  UPDATE public.materiais
+  SET estoque = estoque - v_delta
+  WHERE id = NEW.material_id;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_entrega_itens_estoque ON public.entrega_itens;
+CREATE TRIGGER trg_entrega_itens_estoque
+  AFTER INSERT OR UPDATE OR DELETE ON public.entrega_itens
+  FOR EACH ROW
+  EXECUTE FUNCTION public._trg_entrega_item_estoque();
 
 -- -----------------------------------------------------------------------------
 -- Entregas
@@ -1877,7 +1948,7 @@ GRANT EXECUTE ON FUNCTION public.listar_tipos(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.salvar_tipo(text, uuid, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.excluir_tipo(text, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_materiais(text) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.salvar_material(text, uuid, text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.salvar_material(text, uuid, text, text, integer) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.excluir_material(text, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.listar_entregas(text, integer) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.salvar_entrega(text, uuid, text, date, uuid[], json, text, uuid, boolean, text, text, text, text, text, text, text) TO anon, authenticated;
@@ -1891,6 +1962,7 @@ REVOKE EXECUTE ON FUNCTION public._exige_login(text) FROM anon, authenticated, p
 REVOKE EXECUTE ON FUNCTION public._exige_admin(text) FROM anon, authenticated, public;
 REVOKE EXECUTE ON FUNCTION public._exige_gestao(text) FROM anon, authenticated, public;
 REVOKE EXECUTE ON FUNCTION public._eh_gestao(text) FROM anon, authenticated, public;
+REVOKE EXECUTE ON FUNCTION public._trg_entrega_item_estoque() FROM anon, authenticated, public;
 
 -- -----------------------------------------------------------------------------
 -- Dados iniciais
