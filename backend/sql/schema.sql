@@ -15,6 +15,7 @@
 -- Tipo apoiador: backend/sql/patch-colaborador-tipo-apoiador.sql
 -- Tipo do colaborador no grid de entregas: backend/sql/patch-entrega-colaborador-tipo.sql
 -- Estoque atual do material: backend/sql/patch-material-estoque.sql
+-- Entrega sem exigir estoque positivo: backend/sql/patch-estoque-entrega-livre.sql
 -- =============================================================================
 -- Login inicial após executar:
 --   usuário: admin
@@ -167,7 +168,6 @@ CREATE TABLE IF NOT EXISTS public.materiais (
   estoque     integer NOT NULL DEFAULT 0,
   created_at  timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT materiais_nome_chk CHECK (length(trim(nome)) >= 2),
-  CONSTRAINT materiais_estoque_chk CHECK (estoque >= 0),
   CONSTRAINT materiais_tipo_fk FOREIGN KEY (tipo)
     REFERENCES public.tipos_material (nome)
     ON UPDATE CASCADE
@@ -176,7 +176,6 @@ CREATE TABLE IF NOT EXISTS public.materiais (
 
 ALTER TABLE public.materiais ADD COLUMN IF NOT EXISTS estoque integer NOT NULL DEFAULT 0;
 ALTER TABLE public.materiais DROP CONSTRAINT IF EXISTS materiais_estoque_chk;
-ALTER TABLE public.materiais ADD CONSTRAINT materiais_estoque_chk CHECK (estoque >= 0);
 
 CREATE TABLE IF NOT EXISTS public.entregas (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1387,8 +1386,6 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 DECLARE
-  v_nome text;
-  v_disp integer;
   v_delta integer;
 BEGIN
   IF TG_OP = 'DELETE' THEN
@@ -1409,16 +1406,8 @@ BEGIN
     v_delta := NEW.quantidade;
   END IF;
 
-  SELECT nome, estoque INTO v_nome, v_disp
-  FROM public.materiais
-  WHERE id = NEW.material_id;
-
-  IF NOT FOUND THEN
+  IF NOT EXISTS (SELECT 1 FROM public.materiais WHERE id = NEW.material_id) THEN
     RAISE EXCEPTION 'Material não encontrado.';
-  END IF;
-  IF v_delta > 0 AND v_disp < v_delta THEN
-    RAISE EXCEPTION 'Estoque insuficiente de %. Disponível: %. Solicitado: %.',
-      v_nome, v_disp, NEW.quantidade;
   END IF;
 
   UPDATE public.materiais

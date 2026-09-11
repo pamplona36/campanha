@@ -1,8 +1,8 @@
 window.Campanha = window.Campanha || {};
 
 Campanha.VERSION = {
-  number: '1.0.15',
-  released: '2026-09-09'
+  number: '1.0.16',
+  released: '2026-09-11'
 };
 
 Campanha.rotuloVersao = function () {

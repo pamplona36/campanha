@@ -4,20 +4,9 @@ window.Campanha = window.Campanha || {};
   const $ = (id) => C.utils.$(id);
   const { esc, hojeISO, formatarData, formatarCpf, formatarTelefone, soDigitos, podeGestao, preencherSelect, rotuloTipoColaborador } = C.utils;
 
-  let itensEstoqueOriginais = [];
-
   function estoqueMaterial(m) {
     const n = Number(m?.estoque);
     return Number.isFinite(n) ? n : 0;
-  }
-
-  function estoqueDisponivel(materialId) {
-    const m = (C.state.cache.materiais || []).find((x) => x.id === materialId);
-    let n = estoqueMaterial(m);
-    n += (itensEstoqueOriginais || [])
-      .filter((i) => i.material_id === materialId)
-      .reduce((acc, i) => acc + (Number(i.quantidade) || 0), 0);
-    return n;
   }
 
   function opcoesMaterial() {
@@ -444,7 +433,6 @@ window.Campanha = window.Campanha || {};
   }
 
   function prepararFormNovo() {
-    itensEstoqueOriginais = [];
     aplicarCamposAdmin();
     atualizarSelectsCabecalho();
     resetarStatusForm();
@@ -801,21 +789,6 @@ window.Campanha = window.Campanha || {};
           C.ui.toast('Inclua ao menos um material com quantidade.', 'erro');
           return;
         }
-        const pedidos = new Map();
-        for (const item of itens) {
-          pedidos.set(item.material_id, (pedidos.get(item.material_id) || 0) + item.quantidade);
-        }
-        for (const [materialId, qtd] of pedidos) {
-          const disp = estoqueDisponivel(materialId);
-          if (qtd > disp) {
-            const mat = (C.state.cache.materiais || []).find((x) => x.id === materialId);
-            C.ui.toast(
-              `Estoque insuficiente de ${mat?.nome || 'material'}. Disponível: ${disp}. Solicitado: ${qtd}.`,
-              'erro'
-            );
-            return;
-          }
-        }
         const usaColab = Boolean($('ent-local-colab')?.checked);
         const enderecoNovo = {
           endereco: $('ent-endereco')?.value.trim() || '',
@@ -998,8 +971,7 @@ window.Campanha = window.Campanha || {};
         $('ent-status').innerHTML = opcoesStatusHtml(status);
         $('ent-status').value = status;
       }
-      itensEstoqueOriginais = itensDaEntrega(e).filter((i) => i.material_id);
-      resetarItens(itensEstoqueOriginais);
+      resetarItens(itensDaEntrega(e));
       if (e.usa_endereco_colaborador === false) {
         await preencherEnderecoNovo(e);
         definirModoEndereco(false);
